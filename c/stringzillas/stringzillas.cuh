@@ -403,6 +403,19 @@ struct levenshtein_backends_t {
         : variants(std::forward<variants_arguments_>(args)...) {}
 };
 
+struct levenshtein_within_backends_t {
+
+    /**
+     *  The bounded Levenshtein membership engine currently has a single serial backend;
+     *  SIMD specializations drop in as further variant alternatives, like the distance engines.
+     */
+    std::variant<szs::levenshtein_within_serial_t> variants;
+
+    template <typename... variants_arguments_>
+    levenshtein_within_backends_t(variants_arguments_ &&...args) noexcept
+        : variants(std::forward<variants_arguments_>(args)...) {}
+};
+
 struct levenshtein_utf8_backends_t {
 
     /**

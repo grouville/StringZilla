@@ -253,6 +253,87 @@ SZ_API_RUNTIME sz_status_t szs_levenshtein_distances_u64tape(                   
  */
 SZ_API_RUNTIME void szs_levenshtein_distances_free(szs_levenshtein_distances_t engine);
 
+/*  APIs for testing bounded edit-distance membership between binary strings as a cross-product matrix.
+ *  Each call answers whether `levenshtein(queries[query_index], candidates[candidate_index]) <= bound` and writes
+ *  the boolean to `results[query_index * results_row_stride + candidate_index]` (1 for within the bound, 0 otherwise).
+ *  Passing `candidates == NULL` requests symmetric self-similarity of `queries` (the lower triangle is computed and
+ *  mirrored, `rows == columns`). Only the unit-cost byte-level distance is supported.
+ *  Supports `sz_sequence_t`, `sz_sequence_u32tape_t`, and `sz_sequence_u64tape_t` inputs.
+ */
+typedef void *szs_levenshtein_within_t;
+
+/**
+ *  @brief Initialize a bounded Levenshtein membership engine.
+ *
+ *  Creates an engine answering "is the unit-cost edit distance at most `bound`?" without computing the
+ *  distance itself: small bounds run a deterministic column automaton (a sliding diagonal band of `2 * bound + 1`
+ *  capped DP values with an absorbing all-dead state), larger bounds run bit-parallel Myers with an early exit.
+ *
+ *  @param[in] bound Maximum edit distance that still counts as a match.
+ *  @param[in] alloc Memory allocator (NULL for default).
+ *  @param[in] capabilities Hardware capabilities mask.
+ *  @param[out] engine Pointer to initialized engine handle.
+ *  @param[out] error_message Optional output pointer for detailed error information.
+ */
+SZ_API_RUNTIME sz_status_t szs_levenshtein_within_init(  //
+    sz_size_t bound, sz_memory_allocator_t const *alloc, //
+    sz_capability_t capabilities,                        //
+    szs_levenshtein_within_t *engine, char const **error_message);
+
+/**
+ *  @brief Compute the cross-product matrix of bounded Levenshtein membership between two sequence collections.
+ *  @param[in] engine Initialized membership engine.
+ *  @param[in] device Device scope for execution.
+ *  @param[in] queries Query sequence collection (matrix rows).
+ *  @param[in] candidates Candidate sequence collection (matrix columns); NULL requests symmetric self-similarity of @p queries.
+ *  @param[out] results Output boolean matrix; cell `(query_index, candidate_index)` is at `results[query_index * results_row_stride + candidate_index]`.
+ *  @param[in] results_row_stride Number of elements between consecutive query rows (>= candidate count).
+ *  @param[out] error_message Optional output pointer for detailed error information.
+ */
+SZ_API_RUNTIME sz_status_t szs_levenshtein_within(                 //
+    szs_levenshtein_within_t engine, szs_device_scope_t device,    //
+    sz_sequence_t const *queries, sz_sequence_t const *candidates, //
+    sz_u8_t *results, sz_size_t results_row_stride,                //
+    char const **error_message);
+
+/**
+ *  @brief Compute the cross-product matrix of bounded Levenshtein membership for 32-bit tape format.
+ *  @param[in] engine Initialized membership engine.
+ *  @param[in] device Device scope for execution.
+ *  @param[in] queries Query sequence tape (matrix rows).
+ *  @param[in] candidates Candidate sequence tape (matrix columns); NULL requests symmetric self-similarity of @p queries.
+ *  @param[out] results Output boolean matrix; cell `(query_index, candidate_index)` is at `results[query_index * results_row_stride + candidate_index]`.
+ *  @param[in] results_row_stride Number of elements between consecutive query rows (>= candidate count).
+ *  @param[out] error_message Optional output pointer for detailed error information.
+ */
+SZ_API_RUNTIME sz_status_t szs_levenshtein_within_u32tape(                         //
+    szs_levenshtein_within_t engine, szs_device_scope_t device,                    //
+    sz_sequence_u32tape_t const *queries, sz_sequence_u32tape_t const *candidates, //
+    sz_u8_t *results, sz_size_t results_row_stride,                                //
+    char const **error_message);
+
+/**
+ *  @brief Compute the cross-product matrix of bounded Levenshtein membership for 64-bit tape format.
+ *  @param[in] engine Initialized membership engine.
+ *  @param[in] device Device scope for execution.
+ *  @param[in] queries Query sequence tape (matrix rows).
+ *  @param[in] candidates Candidate sequence tape (matrix columns); NULL requests symmetric self-similarity of @p queries.
+ *  @param[out] results Output boolean matrix; cell `(query_index, candidate_index)` is at `results[query_index * results_row_stride + candidate_index]`.
+ *  @param[in] results_row_stride Number of elements between consecutive query rows (>= candidate count).
+ *  @param[out] error_message Optional output pointer for detailed error information.
+ */
+SZ_API_RUNTIME sz_status_t szs_levenshtein_within_u64tape(                         //
+    szs_levenshtein_within_t engine, szs_device_scope_t device,                    //
+    sz_sequence_u64tape_t const *queries, sz_sequence_u64tape_t const *candidates, //
+    sz_u8_t *results, sz_size_t results_row_stride,                                //
+    char const **error_message);
+
+/**
+ *  @brief Free bounded Levenshtein membership engine resources.
+ *  @param[in] engine Engine handle to free.
+ */
+SZ_API_RUNTIME void szs_levenshtein_within_free(szs_levenshtein_within_t engine);
+
 /**
  *  @brief Initialize UTF-8 aware Levenshtein distance engine.
  *
