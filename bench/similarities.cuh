@@ -29,6 +29,7 @@ using ashvardanian::stringzillas::levenshtein_icelake_t;
 using ashvardanian::stringzillas::levenshtein_serial_t;
 using ashvardanian::stringzillas::levenshtein_utf8_icelake_t;
 using ashvardanian::stringzillas::levenshtein_utf8_serial_t;
+using ashvardanian::stringzillas::levenshtein_within_serial_t;
 using ashvardanian::stringzillas::linear_gap_costs_t;
 using ashvardanian::stringzillas::affine_needleman_wunsch_haswell_t;
 using ashvardanian::stringzillas::affine_needleman_wunsch_icelake_t;
@@ -81,6 +82,8 @@ using ashvardanian::stringzillas::strided_rows;
 using namespace ashvardanian::stringzilla::scripts;
 
 using similarities_t = unified_vector<sz_ssize_t>;
+/** @brief Boolean membership matrix produced by the bounded `levenshtein_distances_within` engines. */
+using similarities_within_t = unified_vector<sz_u8_t>;
 
 /**
  *  @brief The device-measured kernel time that an engine reports, in milliseconds, or @b 0 for CPU engines.
@@ -137,9 +140,10 @@ SZ_NOINLINE engine_timing_t read_engine_timing_(status_type_ const &engine_resul
  *        the call and the read together in a non-inlined frame reproduces the same code path as a separate-TU
  *        call, which the library validates as correct in isolation.
  */
-template <typename engine_type_, typename queries_type_, typename candidates_type_, typename... rest_types_>
+template <typename engine_type_, typename queries_type_, typename candidates_type_, typename value_type_,
+          typename... rest_types_>
 SZ_NOINLINE engine_timing_t invoke_engine_timed_(engine_type_ &engine, queries_type_ const &queries,
-                                                 candidates_type_ const &candidates, strided_rows<sz_ssize_t> results,
+                                                 candidates_type_ const &candidates, strided_rows<value_type_> results,
                                                  rest_types_ &...rest) noexcept {
     auto status = engine(queries, candidates, results, rest...);
     do_not_optimize(status);
@@ -260,13 +264,16 @@ inline std::vector<shape_t> make_similarity_shapes(environment_t const &env, std
  *  stateful `global_random_generator()`. This is load-bearing: `bench_unary` drives the baseline and the
  *  accelerated callable with the @b same `batch_index` and then compares their result buffers, so both must
  *  observe byte-identical tiles for a given index.
+ *
+ *  The result matrix element type comes from @p results_type_: `sz_ssize_t` distances/scores for the ranking
+ *  engines, `sz_u8_t` booleans for the bounded membership engines like `levenshtein_distances_within`.
  */
-template <typename engine_type_, typename... extra_args_>
-struct similarities_callable {
+template <typename results_type_, typename engine_type_, typename... extra_args_>
+struct similarities_callable_for {
     using engine_t = engine_type_;
 
     environment_t const &env;
-    similarities_t &results;
+    results_type_ &results;
     shape_t shape = {};
     engine_t engine = {};
     std::tuple<extra_args_...> extra_args = {};
@@ -282,8 +289,8 @@ struct similarities_callable {
     double kernel_milliseconds_total = 0.0;
     double kernel_cells_total = 0.0;
 
-    similarities_callable(environment_t const &env, similarities_t &res, shape_t shape, engine_t eng = {},
-                          extra_args_... args)
+    similarities_callable_for(environment_t const &env, results_type_ &res, shape_t shape, engine_t eng = {},
+                              extra_args_... args)
         : env(env), results(res), shape(shape), engine(std::move(eng)), extra_args(std::forward<extra_args_>(args)...) {
         if (env.tokens.size() <= shape.queries + shape.candidates)
             throw std::runtime_error("Cross-product tile is too large for the dataset.");
@@ -300,7 +307,7 @@ struct similarities_callable {
      *  accumulate device time, so the guard skips them and the wall figure's format stays untouched for
      *  downstream log parsing.
      */
-    ~similarities_callable() {
+    ~similarities_callable_for() {
         if (kernel_milliseconds_total <= 0.0 || kernel_cells_total <= 0.0) return;
         double const kernel_gcups = kernel_cells_total / (kernel_milliseconds_total * 1e6);
         std::printf("> Kernel: %.2f GCUPS @ %.3f ms device-measured (excludes host materialization)\n", kernel_gcups,
@@ -369,7 +376,7 @@ struct similarities_callable {
   private:
     /** @brief Runs the engine call + status/kernel-time read behind the non-inlined `invoke_engine_timed_` boundary. */
     void run_engine_(std::span<token_view_t const> queries_block, std::span<token_view_t const> candidates_block,
-                     strided_rows<sz_ssize_t> results_matrix) noexcept(false) {
+                     strided_rows<typename results_type_::value_type> results_matrix) noexcept(false) {
         engine_timing_t const timing = std::apply(
             [&](auto &&...rest) {
                 return invoke_engine_timed_(engine, queries_block, candidates_block, results_matrix, rest...);
@@ -391,8 +398,8 @@ struct similarities_callable {
     /** @brief Full `queries x candidates` cross-product in one engine call. */
     void score_all_pairs_(std::span<token_view_t const> queries_block,
                           std::span<token_view_t const> candidates_block) noexcept(false) {
-        strided_rows<sz_ssize_t> const results_matrix {results.data(), shape.queries, shape.candidates,
-                                                       shape.candidates};
+        strided_rows<typename results_type_::value_type> const results_matrix {results.data(), shape.queries,
+                                                                               shape.candidates, shape.candidates};
         run_engine_(queries_block, candidates_block, results_matrix);
     }
 
@@ -401,11 +408,18 @@ struct similarities_callable {
                          std::span<token_view_t const> candidates_block) noexcept(false) {
         std::size_t const pairs = shape.scored_pairs();
         for (std::size_t pair_index = 0; pair_index < pairs; ++pair_index) {
-            strided_rows<sz_ssize_t> const results_cell {results.data() + pair_index, 1, 1, 1};
+            strided_rows<typename results_type_::value_type> const results_cell {results.data() + pair_index, 1, 1, 1};
             run_engine_(queries_block.subspan(pair_index, 1), candidates_block.subspan(pair_index, 1), results_cell);
         }
     }
 };
+
+/**
+ *  @brief The classic callable flavor, scoring into a matrix of signed distances/scores.
+ *         Boolean membership matrices use `similarities_callable_for` with `similarities_within_t` directly.
+ */
+template <typename engine_type_, typename... extra_args_>
+using similarities_callable = similarities_callable_for<similarities_t, engine_type_, extra_args_...>;
 
 struct similarities_equality_t {
     bool operator()(check_value_t const &left, check_value_t const &right) const noexcept {
@@ -418,6 +432,33 @@ struct similarities_equality_t {
                             right_matrix[cell_index]);
                 return false;
             }
+        return true;
+    }
+};
+
+/**
+ *  @brief Compares a boolean membership matrix against a full-distance matrix thresholded at @b `bound`.
+ *
+ *  The accelerated side (`left`) is the `sz_u8_t` output of a `levenshtein_distances_within` engine, while the
+ *  baseline side (`right`) holds `sz_ssize_t` unit-cost distances from `levenshtein_serial_t`; a cell matches
+ *  when the boolean equals `distance <= bound`.
+ */
+struct similarities_within_equality_t {
+    std::size_t bound = 0;
+    bool operator()(check_value_t const &left, check_value_t const &right) const noexcept {
+        similarities_within_t const &left_matrix = *reinterpret_cast<similarities_within_t const *>(left);
+        similarities_t const &right_matrix = *reinterpret_cast<similarities_t const *>(right);
+        if (left_matrix.size() != right_matrix.size()) return false;
+        for (std::size_t cell_index = 0; cell_index < left_matrix.size(); ++cell_index) {
+            bool const within_actual = left_matrix[cell_index] != 0;
+            bool const within_expected = right_matrix[cell_index] <= static_cast<sz_ssize_t>(bound);
+            if (within_actual != within_expected) {
+                std::printf("Mismatch at cell %zu: %d != %d (distance %zd, bound %zu)\n", cell_index,
+                            static_cast<int>(within_actual), static_cast<int>(within_expected),
+                            right_matrix[cell_index], bound);
+                return false;
+            }
+        }
         return true;
     }
 };
@@ -638,6 +679,60 @@ void bench_levenshtein(environment_t const &env) {
             scramble_accelerated_results(results_affine_accelerated);
 #endif
         }
+}
+
+/**
+ *  @brief Benchmarks the bounded Levenshtein @b membership engine against the full-distance serial baseline.
+ *
+ *  `levenshtein_within_serial_t` answers a boolean per cell - is the unit-cost edit distance within the bound -
+ *  so its natural baseline is `levenshtein_serial_t` with unit costs, thresholded to booleans at the same bound
+ *  for the fused equality check. Both sides observe byte-identical tiles per batch index, as the sampling is a
+ *  pure function of the seed and the index.
+ *
+ *  The bounds sweep {1, 2, 3, 9}: the tight end matches near-duplicate filtering in retrieval workloads, while
+ *  the loose end approaches full-distance pricing. Unlike `bench_levenshtein`, only unit costs are exercised -
+ *  bounded membership is defined for unit-cost edits alone.
+ */
+void bench_levenshtein_within(environment_t const &env) {
+
+    using namespace std::string_literals; // for "s" suffix
+
+    std::size_t const device_parallelism =
+        (std::max<std::size_t>)(1, static_cast<std::size_t>(std::thread::hardware_concurrency()));
+    std::vector<shape_t> shapes = make_similarity_shapes(env, device_parallelism);
+    similarities_t results_distances_baseline;
+    similarities_within_t results_within_accelerated;
+
+    // Let's reuse a thread-pool to amortize the cost of spawning threads.
+    forkunion_executor_t pool;
+    if (pool.try_spawn(std::thread::hardware_concurrency()) != status_t::success_k)
+        throw std::runtime_error("Failed to spawn thread pool.");
+
+    // Membership is a unit-cost metric, so the baseline is the unit-cost full-distance engine.
+    uniform_substitution_costs_t const unit_substitution {0, 1};
+    linear_gap_costs_t const unit_gap {1};
+    std::size_t const bounds[] = {1, 2, 3, 9};
+
+    for (shape_t const &shape : shapes) {
+        std::string const shape_label = shape.label();
+        std::size_t const matrix_size = shape.all_pairs ? shape.queries * shape.candidates : shape.scored_pairs();
+        results_distances_baseline.resize(matrix_size), results_within_accelerated.resize(matrix_size);
+
+        auto call_distances_baseline = similarities_callable<levenshtein_serial_t, forkunion_executor_t &>(
+            env, results_distances_baseline, shape, levenshtein_serial_t {unit_substitution, unit_gap}, pool);
+        auto name_distances_baseline = "levenshtein_serial_unit:"s + shape_label;
+        bench_result_t distances_baseline = bench_unary(env, name_distances_baseline, call_distances_baseline).log();
+
+        for (std::size_t bound : bounds)
+            bench_unary(
+                env, "levenshtein_within_serial_k"s + std::to_string(bound) + ":"s + shape_label,
+                call_distances_baseline, // full distances, thresholded at `bound` by the equality check
+                similarities_callable_for<similarities_within_t, levenshtein_within_serial_t, forkunion_executor_t &>(
+                    env, results_within_accelerated, shape, levenshtein_within_serial_t {bound}, pool),
+                callable_no_op_t {},                    // preprocessing
+                similarities_within_equality_t {bound}) // equality check
+                .log(distances_baseline);
+    }
 }
 
 void bench_needleman_wunsch_smith_waterman(environment_t const &env) {
