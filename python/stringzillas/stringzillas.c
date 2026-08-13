@@ -316,6 +316,7 @@ PyMODINIT_FUNC PyInit_stringzillas(void) {
 
     if (PyType_Ready(&DeviceScopeType) < 0) return NULL;
     if (PyType_Ready(&LevenshteinDistancesType) < 0) return NULL;
+    if (PyType_Ready(&LevenshteinWithinKType) < 0) return NULL;
     if (PyType_Ready(&LevenshteinDistancesUTF8Type) < 0) return NULL;
     if (PyType_Ready(&NeedlemanWunschType) < 0) return NULL;
     if (PyType_Ready(&SmithWatermanType) < 0) return NULL;
@@ -378,9 +379,19 @@ PyMODINIT_FUNC PyInit_stringzillas(void) {
         return NULL;
     }
 
+    Py_INCREF(&LevenshteinWithinKType);
+    if (PyModule_AddObject(m, "LevenshteinWithinK", (PyObject *)&LevenshteinWithinKType) < 0) {
+        Py_XDECREF(&LevenshteinWithinKType);
+        Py_XDECREF(&LevenshteinDistancesType);
+        Py_XDECREF(&DeviceScopeType);
+        Py_XDECREF(m);
+        return NULL;
+    }
+
     Py_INCREF(&LevenshteinDistancesUTF8Type);
     if (PyModule_AddObject(m, "LevenshteinDistancesUTF8", (PyObject *)&LevenshteinDistancesUTF8Type) < 0) {
         Py_XDECREF(&LevenshteinDistancesUTF8Type);
+        Py_XDECREF(&LevenshteinWithinKType);
         Py_XDECREF(&LevenshteinDistancesType);
         Py_XDECREF(&DeviceScopeType);
         Py_XDECREF(m);
@@ -391,6 +402,7 @@ PyMODINIT_FUNC PyInit_stringzillas(void) {
     if (PyModule_AddObject(m, "NeedlemanWunschScores", (PyObject *)&NeedlemanWunschType) < 0) {
         Py_XDECREF(&NeedlemanWunschType);
         Py_XDECREF(&LevenshteinDistancesUTF8Type);
+        Py_XDECREF(&LevenshteinWithinKType);
         Py_XDECREF(&LevenshteinDistancesType);
         Py_XDECREF(&DeviceScopeType);
         Py_XDECREF(m);
@@ -402,6 +414,7 @@ PyMODINIT_FUNC PyInit_stringzillas(void) {
         Py_XDECREF(&SmithWatermanType);
         Py_XDECREF(&NeedlemanWunschType);
         Py_XDECREF(&LevenshteinDistancesUTF8Type);
+        Py_XDECREF(&LevenshteinWithinKType);
         Py_XDECREF(&LevenshteinDistancesType);
         Py_XDECREF(&DeviceScopeType);
         Py_XDECREF(m);
@@ -414,6 +427,7 @@ PyMODINIT_FUNC PyInit_stringzillas(void) {
         Py_XDECREF(&SmithWatermanType);
         Py_XDECREF(&NeedlemanWunschType);
         Py_XDECREF(&LevenshteinDistancesUTF8Type);
+        Py_XDECREF(&LevenshteinWithinKType);
         Py_XDECREF(&LevenshteinDistancesType);
         Py_XDECREF(&DeviceScopeType);
         Py_XDECREF(m);
