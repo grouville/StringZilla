@@ -70,6 +70,7 @@ int main(int argc, char const **argv) {
 
         std::printf("Starting string similarity benchmarks...\n");
         bench_levenshtein(env);
+        bench_levenshtein_within(env);
         bench_needleman_wunsch_smith_waterman(env);
     }
     catch (std::exception const &e) {
