@@ -467,6 +467,344 @@ PyTypeObject LevenshteinDistancesType = {
     .tp_getset = LevenshteinDistances_getsetters,
 };
 
+/**
+ *  @brief  Bounded Levenshtein membership engine for binary strings.
+ */
+typedef struct {
+    PyObject ob_base;
+    vectorcallfunc vectorcall;
+    szs_levenshtein_within_t handle;
+    char description[32];
+    sz_capability_t capabilities;
+    SZS_LOCK_FIELD_
+} LevenshteinWithinK;
+
+static void LevenshteinWithinK_dealloc(LevenshteinWithinK *self) {
+    if (self->handle) {
+        szs_levenshtein_within_free(self->handle);
+        self->handle = NULL;
+    }
+    Py_TYPE(self)->tp_free((PyObject *)self);
+}
+
+static PyObject *LevenshteinWithinK_vectorcall(PyObject *callable, PyObject *const *args, size_t nargsf,
+                                               PyObject *kwnames);
+
+static PyObject *LevenshteinWithinK_new(PyTypeObject *type, PyObject *args, PyObject *kwargs) {
+    LevenshteinWithinK *self = (LevenshteinWithinK *)type->tp_alloc(type, 0);
+    if (self != NULL) {
+        self->vectorcall = (vectorcallfunc)LevenshteinWithinK_vectorcall;
+        self->handle = NULL;
+        self->description[0] = '\0';
+        self->capabilities = 0;
+    }
+    return (PyObject *)self;
+}
+
+static int LevenshteinWithinK_init(LevenshteinWithinK *self, PyObject *args, PyObject *kwargs) {
+    sz_size_t bound = 2;
+    PyObject *capabilities_tuple = NULL;
+    sz_capability_t capabilities = active_capabilities_;
+
+    // Manual positional + keyword parse (no `PyArg_ParseTupleAndKeywords`, no generic binder).
+    char const *const callable_name = Py_TYPE(self)->tp_name;
+    Py_ssize_t const positional_count = args ? PyTuple_GET_SIZE(args) : 0;
+    if (positional_count > 2) {
+        PyErr_Format(PyExc_TypeError, "%s takes at most 2 arguments (%zd given)", callable_name, positional_count);
+        return -1;
+    }
+    PyObject *bound_obj = positional_count > 0 ? PyTuple_GET_ITEM(args, 0) : NULL;
+    capabilities_tuple = positional_count > 1 ? PyTuple_GET_ITEM(args, 1) : NULL;
+    if (kwargs != NULL) {
+        Py_ssize_t keyword_cursor = 0;
+        PyObject *key = NULL, *value = NULL;
+        while (PyDict_Next(kwargs, &keyword_cursor, &key, &value)) {
+            if (PyUnicode_CompareWithASCIIString(key, "bound") == 0) {
+                if (bound_obj) {
+                    PyErr_Format(PyExc_TypeError, "%s got multiple values for argument 'bound'", callable_name);
+                    return -1;
+                }
+                bound_obj = value;
+            }
+            else if (PyUnicode_CompareWithASCIIString(key, "capabilities") == 0) {
+                if (capabilities_tuple) {
+                    PyErr_Format(PyExc_TypeError, "%s got multiple values for argument 'capabilities'", callable_name);
+                    return -1;
+                }
+                capabilities_tuple = value;
+            }
+            else {
+                PyErr_Format(PyExc_TypeError, "%s got an unexpected keyword argument '%U'", callable_name, key);
+                return -1;
+            }
+        }
+    }
+    if (bound_obj) {
+        bound = PyLong_AsSize_t(bound_obj);
+        if (PyErr_Occurred()) return -1;
+    }
+
+    // Parse capabilities if provided
+    if (capabilities_tuple) {
+        if (parse_and_intersect_capabilities(capabilities_tuple, &capabilities) != 0) { return -1; }
+    }
+
+    char const *error_detail = NULL;
+    sz_status_t status = szs_levenshtein_within_init(bound, NULL, capabilities, &self->handle, &error_detail);
+
+    if (status != sz_success_k) {
+        set_stringzilla_error(status, error_detail, "Levenshtein membership initialization");
+        return -1;
+    }
+
+    snprintf(self->description, sizeof(self->description), "%zu", bound);
+    self->capabilities = capabilities;
+    return 0;
+}
+
+static PyObject *LevenshteinWithinK_repr(LevenshteinWithinK *self) {
+    return PyUnicode_FromFormat("LevenshteinWithinK(bound=%s)", self->description);
+}
+
+static PyObject *LevenshteinWithinK_get_capabilities(LevenshteinWithinK *self, void *closure) {
+    return capabilities_to_tuple(self->capabilities);
+}
+
+static PyObject *LevenshteinWithinK_vectorcall(PyObject *callable, PyObject *const *args, size_t nargsf,
+                                               PyObject *kwnames) {
+    LevenshteinWithinK *self = (LevenshteinWithinK *)callable;
+    PyObject *queries_obj = NULL, *candidates_obj = NULL, *device_obj = NULL, *out_obj = NULL;
+
+    if (parse_cross_product_call_args("LevenshteinWithinK.__call__", args, nargsf, kwnames, &queries_obj,
+                                      &candidates_obj, &device_obj, &out_obj) != 0)
+        return NULL;
+
+    // Treat an explicit `None` for `candidates` as "compute symmetric self-similarity of queries".
+    if (candidates_obj == Py_None) candidates_obj = NULL;
+    sz_bool_t is_self_similarity = (candidates_obj == NULL) ? sz_true_k : sz_false_k;
+
+    DeviceScope *device_scope = NULL;
+    if (device_obj != NULL && device_obj != Py_None) {
+        if (!PyObject_TypeCheck(device_obj, &DeviceScopeType)) {
+            PyErr_SetString(PyExc_TypeError, "device must be a DeviceScope instance");
+            return NULL;
+        }
+        device_scope = (DeviceScope *)device_obj;
+    }
+
+    szs_device_scope_t device_handle = device_scope ? device_scope->handle : default_device_scope;
+    sz_size_t queries_count = 0;
+    sz_size_t candidates_count = 0;
+    void const *kernel_queries_punned = NULL;
+    void const *kernel_candidates_punned = NULL;
+    sz_u8_t *kernel_results = NULL;
+    sz_size_t kernel_results_row_stride = 0;
+    sz_status_t (*kernel_punned)(szs_levenshtein_within_t, szs_device_scope_t, void const *, void const *, sz_u8_t *,
+                                 sz_size_t, char const **) = NULL;
+
+    // Swap allocators only when using CUDA with a GPU device (inputs must be unified)
+    if (requires_unified_memory(self->capabilities)) {
+        if (!try_swap_to_unified_allocator(queries_obj)) return NULL;
+        if (candidates_obj && !try_swap_to_unified_allocator(candidates_obj)) return NULL;
+    }
+
+    // Handle 32-bit tape inputs
+    sz_sequence_u32tape_t queries_u32tape, candidates_u32tape;
+    sz_bool_t queries_is_u32tape = sz_py_export_strings_as_u32tape( //
+        queries_obj, &queries_u32tape.data, &queries_u32tape.offsets, &queries_u32tape.count);
+    sz_bool_t candidates_is_u32tape = candidates_obj && sz_py_export_strings_as_u32tape( //
+                                                            candidates_obj, &candidates_u32tape.data,
+                                                            &candidates_u32tape.offsets, &candidates_u32tape.count);
+    if (queries_is_u32tape && (is_self_similarity || candidates_is_u32tape)) {
+        queries_count = queries_u32tape.count;
+        candidates_count = is_self_similarity ? queries_u32tape.count : candidates_u32tape.count;
+        kernel_punned = szs_levenshtein_within_u32tape;
+        kernel_queries_punned = &queries_u32tape;
+        kernel_candidates_punned = is_self_similarity ? NULL : &candidates_u32tape;
+    }
+
+    // Handle 64-bit tape inputs
+    sz_sequence_u64tape_t queries_u64tape, candidates_u64tape;
+    sz_bool_t queries_is_u64tape = !queries_is_u32tape && sz_py_export_strings_as_u64tape( //
+                                                              queries_obj, &queries_u64tape.data,
+                                                              &queries_u64tape.offsets, &queries_u64tape.count);
+    sz_bool_t candidates_is_u64tape = candidates_obj && !candidates_is_u32tape &&
+                                      sz_py_export_strings_as_u64tape( //
+                                          candidates_obj, &candidates_u64tape.data, &candidates_u64tape.offsets,
+                                          &candidates_u64tape.count);
+    if (!kernel_punned && queries_is_u64tape && (is_self_similarity || candidates_is_u64tape)) {
+        queries_count = queries_u64tape.count;
+        candidates_count = is_self_similarity ? queries_u64tape.count : candidates_u64tape.count;
+        kernel_punned = szs_levenshtein_within_u64tape;
+        kernel_queries_punned = &queries_u64tape;
+        kernel_candidates_punned = is_self_similarity ? NULL : &candidates_u64tape;
+    }
+
+    // Handle sequence inputs
+    sz_sequence_t queries_seq, candidates_seq;
+    sz_bool_t queries_is_sequence = !queries_is_u32tape && !queries_is_u64tape &&
+                                    sz_py_export_strings_as_sequence(queries_obj, &queries_seq);
+    sz_bool_t candidates_is_sequence = candidates_obj && !candidates_is_u32tape && !candidates_is_u64tape &&
+                                       sz_py_export_strings_as_sequence(candidates_obj, &candidates_seq);
+    if (!kernel_punned && queries_is_sequence && (is_self_similarity || candidates_is_sequence)) {
+        queries_count = queries_seq.count;
+        candidates_count = is_self_similarity ? queries_seq.count : candidates_seq.count;
+        kernel_punned = szs_levenshtein_within;
+        kernel_queries_punned = &queries_seq;
+        kernel_candidates_punned = is_self_similarity ? NULL : &candidates_seq;
+    }
+
+    // No homogeneous kernel matched. This happens when one side is empty: an empty Strs is always
+    // FRAGMENTED and cannot pair with a non-empty side's tape above. If both sides are recognized Strs
+    // and either is empty, the cross product is an empty matrix -- record the counts and fall through
+    // with a NULL kernel (the call below is skipped and the empty matrix returned).
+    if (!kernel_punned) {
+        sz_bool_t queries_recognized = queries_is_u32tape || queries_is_u64tape || queries_is_sequence;
+        sz_bool_t candidates_recognized = is_self_similarity || candidates_is_u32tape || candidates_is_u64tape ||
+                                          candidates_is_sequence;
+        sz_size_t queries_any_count = queries_is_u32tape    ? queries_u32tape.count
+                                      : queries_is_u64tape  ? queries_u64tape.count
+                                      : queries_is_sequence ? queries_seq.count
+                                                            : 0;
+        sz_size_t candidates_any_count = is_self_similarity       ? queries_any_count
+                                         : candidates_is_u32tape  ? candidates_u32tape.count
+                                         : candidates_is_u64tape  ? candidates_u64tape.count
+                                         : candidates_is_sequence ? candidates_seq.count
+                                                                  : 0;
+        if (!(queries_recognized && candidates_recognized && (queries_any_count == 0 || candidates_any_count == 0))) {
+            PyErr_Format( //
+                PyExc_TypeError,
+                "Expected stringzilla.Strs objects, got %s and %s. " //
+                "Convert using: stringzilla.Strs(your_string_list)",
+                Py_TYPE(queries_obj)->tp_name, candidates_obj ? Py_TYPE(candidates_obj)->tp_name : "None");
+            return NULL;
+        }
+        queries_count = queries_any_count;
+        candidates_count = candidates_any_count;
+    }
+
+    // Allocate a fresh 2-D boolean matrix or validate the provided `out` array.
+    PyObject *results_array = NULL;
+    if (!out_obj || out_obj == Py_None) {
+        npy_intp results_shape[2] = {(npy_intp)queries_count, (npy_intp)candidates_count};
+        results_array = PyArray_SimpleNew(2, results_shape, NPY_BOOL);
+        if (!results_array) {
+            PyErr_SetString(PyExc_RuntimeError, "Failed to create NumPy array for results");
+            goto cleanup;
+        }
+        kernel_results = (sz_u8_t *)PyArray_DATA((PyArrayObject *)results_array);
+        kernel_results_row_stride = candidates_count;
+    }
+    else {
+        if (!PyArray_Check(out_obj)) {
+            PyErr_SetString(PyExc_TypeError, "out argument must be a NumPy array");
+            goto cleanup;
+        }
+        PyArrayObject *array = (PyArrayObject *)out_obj;
+        if (PyArray_NDIM(array) != 2) {
+            PyErr_SetString(PyExc_ValueError, "out array must be 2-dimensional");
+            goto cleanup;
+        }
+        if (PyArray_DIM(array, 0) != (npy_intp)queries_count || PyArray_DIM(array, 1) != (npy_intp)candidates_count) {
+            PyErr_SetString(PyExc_ValueError, "out array shape does not match the cross product");
+            goto cleanup;
+        }
+        if (PyArray_TYPE(array) != NPY_BOOL) {
+            PyErr_SetString(PyExc_TypeError, "out array must have bool dtype");
+            goto cleanup;
+        }
+        if (!PyArray_IS_C_CONTIGUOUS(array) || !PyArray_ISALIGNED(array) || !PyArray_ISWRITEABLE(array)) {
+            PyErr_SetString(PyExc_ValueError, "out array must be C-contiguous, aligned, and writeable");
+            goto cleanup;
+        }
+        kernel_results = (sz_u8_t *)PyArray_DATA(array);
+        kernel_results_row_stride = candidates_count;
+        results_array = out_obj;
+        Py_INCREF(results_array);
+    }
+
+    char const *error_detail = NULL;
+    sz_status_t status = sz_success_k; // An empty cross product (zero-row/col matrix) needs no kernel
+    if (kernel_punned) {
+        if (device_scope) SZS_LOCK_(&device_scope->lock);
+        SZS_LOCK_(&self->lock);
+        status = kernel_punned(                              //
+            self->handle, device_handle,                     //
+            kernel_queries_punned, kernel_candidates_punned, //
+            kernel_results, kernel_results_row_stride, &error_detail);
+        SZS_UNLOCK_(&self->lock);
+        if (device_scope) SZS_UNLOCK_(&device_scope->lock);
+    }
+
+    if (status != sz_success_k) {
+        set_stringzilla_error(status, error_detail, "Levenshtein membership computation");
+        goto cleanup;
+    }
+    return results_array;
+
+cleanup:
+    Py_XDECREF(results_array);
+    return NULL;
+}
+
+static char const doc_LevenshteinWithinK[] =                                                                 //
+    "LevenshteinWithinK(bound=2, capabilities=None)\n"                                                       //
+    "\n"                                                                                                     //
+    "Bounded Levenshtein membership engine for binary strings.\n"                                            //
+    "Answers whether the unit-cost edit distance between each (query, candidate) pair is at most `bound`.\n" //
+    "\n"                                                                                                     //
+    "Args:\n"                                                                                                //
+    "  bound (int): Maximum edit distance to count as a match (default: 2).\n"                               //
+    "  capabilities (Tuple[str] or DeviceScope, optional): Hardware capabilities to use.\n"                  //
+    "                                       Can be explicit capabilities like ('serial', 'parallel')\n"      //
+    "                                       or a DeviceScope for automatic capability inference.\n"          //
+    "\n"                                                                                                     //
+    "Call with:\n"                                                                                           //
+    "  queries (sequence): Query strings forming the matrix rows.\n"                                         //
+    "  candidates (sequence, optional): Candidate strings forming the matrix columns. When omitted\n"        //
+    "                                   (or None), computes the symmetric self-similarity of queries.\n"     //
+    "  device (DeviceScope, optional): Device execution context.\n"                                          //
+    "  out (np.ndarray, optional): 2-D bool output buffer of shape (len(queries), len(candidates)).\n"       //
+    "\n"                                                                                                     //
+    "Returns:\n"                                                                                             //
+    "  np.ndarray: 2-D bool matrix where result[query_index, candidate_index] is True when the\n"            //
+    "              distance between queries[query_index] and candidates[candidate_index] is within bound.\n" //
+    "\n"                                                                                                     //
+    "Examples:\n"                                                                                            //
+    "  >>> # Minimal CPU example with auto-inferred capabilities\n"                                          //
+    "  >>> import stringzilla as sz, stringzillas as szs\n"                                                  //
+    "  >>> engine = szs.LevenshteinWithinK(bound=1)\n"                                                       //
+    "  >>> strings_a = sz.Strs(['color', 'dog'])\n"                                                          //
+    "  >>> strings_b = sz.Strs(['colors', 'cat'])\n"                                                         //
+    "  >>> engine(strings_a, strings_b).tolist()\n"                                                          //
+    "  [[True, False], [False, False]]\n"                                                                    //
+    "  >>> # Symmetric self-similarity when `candidates` is omitted\n"                                       //
+    "  >>> engine(sz.Strs(['hello', 'hallo', 'world'])).tolist()\n"                                          //
+    "  [[True, True, False], [True, True, False], [False, False, True]]\n"                                   //
+    "  >>> # GPU example; falls back to CPU when CUDA is unavailable\n"                                      //
+    "  >>> scope = szs.DeviceScope(gpu_device=0) if 'cuda' in szs.__capabilities__ else szs.DeviceScope()\n" //
+    "  >>> engine = szs.LevenshteinWithinK(2, scope)\n"                                                      //
+    "  >>> matches = engine(strings_a, strings_b, device=scope)";
+
+static PyGetSetDef LevenshteinWithinK_getsetters[] = {
+    {"__capabilities__", (getter)LevenshteinWithinK_get_capabilities, NULL, doc_capabilities, NULL}, //
+    {NULL}                                                                                           /* Sentinel */
+};
+
+PyTypeObject LevenshteinWithinKType = {
+    PyVarObject_HEAD_INIT(NULL, 0).tp_name = "stringzillas.LevenshteinWithinK",
+    .tp_doc = doc_LevenshteinWithinK,
+    .tp_basicsize = sizeof(LevenshteinWithinK),
+    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_VECTORCALL,
+    .tp_vectorcall_offset = offsetof(LevenshteinWithinK, vectorcall),
+    .tp_new = LevenshteinWithinK_new,
+    .tp_init = (initproc)LevenshteinWithinK_init,
+    .tp_dealloc = (destructor)LevenshteinWithinK_dealloc,
+    .tp_call = PyVectorcall_Call,
+    .tp_repr = (reprfunc)LevenshteinWithinK_repr,
+    .tp_getset = LevenshteinWithinK_getsetters,
+};
+
 typedef struct {
     PyObject ob_base;
     vectorcallfunc vectorcall;

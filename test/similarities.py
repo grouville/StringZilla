@@ -642,6 +642,104 @@ def test_smith_waterman_against_affine_gaps(
     np.testing.assert_array_equal(scores, baseline)
 
 
+LEVENSHTEIN_WITHIN_K_BOUNDS = [0, 1, 2, 3, 5, 9]
+
+
+@pytest.mark.parametrize("capabilities_mode", ["base", "infer-from-device"])
+@pytest.mark.parametrize("device_name", DEVICE_NAMES)
+@pytest.mark.parametrize("config", INPUT_SIZE_CONFIGS)
+@pytest.mark.parametrize("seed_value", SEED_VALUES)
+def test_levenshtein_within_k_basic(
+    capabilities_mode: str,
+    device_name: DeviceName,
+    config: InputSizeConfig,
+    seed_value: int,
+):
+    """LevenshteinWithinK matches the `baseline_levenshtein_distance <= bound` oracle matrix on random
+    strings across bounds, capability modes, devices, and input sizes, in both cross-product and
+    symmetric self-similarity modes."""
+
+    seed_random_generators(seed_value)
+    batch_size, min_len, max_len = generate_string_batches(config)
+    query_strings = [get_random_string(length=randint(min_len, max_len)) for _ in range(batch_size)]
+    candidate_strings = [get_random_string(length=randint(min_len, max_len)) for _ in range(batch_size)]
+
+    # The Python oracle is quadratic in the batch, so for large batches verify a leading square
+    # window in full, plus the diagonal of the whole matrix.
+    window = min(batch_size, 24)
+    cross_oracle = np.array(
+        [[baseline_levenshtein_distance(q, c) for c in candidate_strings[:window]] for q in query_strings[:window]],
+        dtype=np.uint64,
+    )
+    self_oracle = np.array(
+        [[baseline_levenshtein_distance(a, b) for b in query_strings[:window]] for a in query_strings[:window]],
+        dtype=np.uint64,
+    )
+    diagonal_oracle = np.array(
+        [baseline_levenshtein_distance(q, c) for q, c in zip(query_strings, candidate_strings)],
+        dtype=np.uint64,
+    )
+
+    device_scope, base_caps = device_scope_and_capabilities(device_name)
+    queries, candidates = Strs(query_strings), Strs(candidate_strings)
+    for bound in LEVENSHTEIN_WITHIN_K_BOUNDS:
+        engine = szs.LevenshteinWithinK(
+            bound=bound, capabilities=base_caps if capabilities_mode == "base" else device_scope
+        )
+
+        matrix = engine(queries, candidates, device=device_scope)
+        assert matrix.dtype == np.bool_
+        assert matrix.shape == (batch_size, batch_size)
+        np.testing.assert_array_equal(matrix[:window, :window], cross_oracle <= bound)
+        np.testing.assert_array_equal(np.diagonal(matrix), diagonal_oracle <= bound)
+
+        # Symmetric self-similarity mode: same queries, no candidates.
+        self_matrix = engine(queries, device=device_scope)
+        assert self_matrix.dtype == np.bool_
+        assert self_matrix.shape == (batch_size, batch_size)
+        assert np.all(np.diagonal(self_matrix)), "Self-similarity diagonal must be all True"
+        assert np.array_equal(self_matrix, self_matrix.T), "Self-similarity matrix must be symmetric"
+        np.testing.assert_array_equal(self_matrix[:window, :window], self_oracle <= bound)
+
+
+@pytest.mark.parametrize("capabilities_mode", ["base", "infer-from-device"])
+@pytest.mark.parametrize("device_name", DEVICE_NAMES)
+def test_levenshtein_within_k_edge_cases(capabilities_mode: str, device_name: DeviceName):
+    """Empty strings, identical strings with a zero bound, strings wider than a 255-cell DP row,
+    and `out=` buffer reuse."""
+
+    device_scope, base_caps = device_scope_and_capabilities(device_name)
+    capabilities = base_caps if capabilities_mode == "base" else device_scope
+
+    exact_engine = szs.LevenshteinWithinK(bound=0, capabilities=capabilities)
+
+    # Empty strings are within bound zero of each other, but not of anything else.
+    matrix = exact_engine(Strs(["", "a"]), Strs(["", "b"]), device=device_scope)
+    assert matrix.dtype == np.bool_
+    assert matrix.tolist() == [[True, False], [False, False]]
+
+    # Identical strings match at bound zero; anything else does not.
+    matrix = exact_engine(Strs(["exact", ""]), Strs(["exact", "x"]), device=device_scope)
+    assert matrix.tolist() == [[True, False], [False, False]]
+
+    # Strings longer than 255 characters force the DP accumulator past its 1-byte tier.
+    within_engine = szs.LevenshteinWithinK(bound=1, capabilities=capabilities)
+    long_a = "a" * 300
+    long_b = "a" * 299 + "b"  # one substitution away
+    long_c = "a" * 150 + "b" * 150  # 150 substitutions away
+    assert within_engine(Strs([long_a]), Strs([long_b]), device=device_scope).tolist() == [[True]]
+    assert within_engine(Strs([long_a]), Strs([long_c]), device=device_scope).tolist() == [[False]]
+
+    # The `out=` buffer must be filled in place, returned as-is, and reusable across calls.
+    out_buffer = np.zeros((2, 2), dtype=np.bool_)
+    returned = within_engine(Strs(["ab", "cd"]), Strs(["ab", "ce"]), device=device_scope, out=out_buffer)
+    assert returned is out_buffer
+    assert out_buffer.tolist() == [[True, False], [False, True]]
+    returned = within_engine(Strs(["xy", "zz"]), Strs(["xy", "zz"]), device=device_scope, out=out_buffer)
+    assert returned is out_buffer
+    assert out_buffer.tolist() == [[True, False], [False, True]]
+
+
 # endregion Unit
 
 
@@ -918,6 +1016,46 @@ def test_smith_waterman_backend_differential_degenerate_corpus(cost_mode, device
 
     self_similarity_matrices = run_across_engines(make_engine, queries, device=device_scope)
     assert_engines_agree(self_similarity_matrices, context=" (self-similarity)")
+
+
+@pytest.mark.parametrize("device_label, device_scope", DIFFERENTIAL_DEVICE_SCOPES)
+@pytest.mark.parametrize("bound", [0, 5])
+def test_levenshtein_within_k_backend_differential(bound, device_label, device_scope):
+    """Every `capability_sweep()` backend agrees with itself and with the
+    `baseline_levenshtein_distance <= bound` oracle on `DEGENERATE_BYTE_STRINGS`, at a zero bound
+    (exact-match membership) and a bound above 3, plus an empty batch and empty self-similarity.
+    Mirrors the byte-level `LevenshteinDistances` differential above, including the >255-character
+    string whose DP row overflows a 1-byte accumulator tier."""
+
+    queries = Strs(DEGENERATE_BYTE_STRINGS)
+    candidates = Strs(DEGENERATE_BYTE_STRINGS)
+
+    def make_engine(capabilities):
+        return szs.LevenshteinWithinK(bound=bound, capabilities=capabilities)
+
+    matrices = run_across_engines(make_engine, queries, candidates, device=device_scope)
+    oracle_matrix = np.array(
+        [
+            [
+                baseline_levenshtein_distance(query.encode(), candidate.encode()) <= bound
+                for candidate in DEGENERATE_BYTE_STRINGS
+            ]
+            for query in DEGENERATE_BYTE_STRINGS
+        ],
+        dtype=np.bool_,
+    )
+    assert_engines_agree(matrices, oracle_matrix, context=f" (bound={bound}, device={device_label})")
+
+    # Degenerate empty batch: both-empty cross product and empty self-similarity, same coverage
+    # shape as the `LevenshteinDistances` differential above and for the reasons documented there.
+    empty_matrices = run_across_engines(make_engine, Strs([]), Strs([]), device=device_scope)
+    assert_engines_agree(empty_matrices, np.zeros((0, 0), dtype=np.bool_), context=" (empty batch)")
+
+    self_similarity_matrices = run_across_engines(make_engine, queries, device=device_scope)
+    assert_engines_agree(self_similarity_matrices, context=" (self-similarity)")
+    assert np.all(np.diagonal(self_similarity_matrices[0])), (
+        "Self-similarity diagonal must be all True regardless of the bound"
+    )
 
 
 # endregion Backend differential
