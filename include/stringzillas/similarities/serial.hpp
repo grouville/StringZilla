@@ -648,6 +648,15 @@ template <typename gap_costs_type_ = linear_gap_costs_t, typename allocator_type
 #endif
 struct levenshtein_distances_utf8;
 
+/**
+ *  @brief Computes bounded Levenshtein membership masks in parallel using the CPU backend: for every
+ *      `(query, candidate)` cell, whether the unit-cost edit distance is at most the engine's bound.
+ *      Mirrors `levenshtein_distances`, but writes booleans instead of distances.
+ */
+template <typename allocator_type_ = dummy_alloc_t, sz_capability_t capability_ = sz_cap_serial_k,
+          typename enable_ = void>
+struct levenshtein_distances_within;
+
 template <typename substituter_type_ = error_costs_32x32_t, typename gap_costs_type_ = linear_gap_costs_t,
           typename allocator_type_ = dummy_alloc_t, sz_capability_t capability_ = sz_cap_serial_k,
           typename enable_ = void>
@@ -687,6 +696,9 @@ using affine_needleman_wunsch_serial_t =
     needleman_wunsch_scores<error_costs_32x32_t, affine_gap_costs_t, malloc_t, sz_cap_serial_k>;
 using affine_smith_waterman_serial_t =
     smith_waterman_scores<error_costs_32x32_t, affine_gap_costs_t, malloc_t, sz_cap_serial_k>;
+
+/** @brief The bounded Levenshtein membership engines, mirroring the distance engine aliases per backend. */
+using levenshtein_within_serial_t = levenshtein_distances_within<malloc_t, sz_cap_serial_k>;
 
 /**
  *  In @b AVX-512:
@@ -2511,6 +2523,282 @@ struct levenshtein_distance_myers<rune_t, sz_cap_serial_k> {
     }
 };
 
+#pragma region Bounded Levenshtein (Within-k)
+
+/**
+ *  @brief Bounded Levenshtein membership test: answers whether the unit-cost edit distance between two
+ *      strings is at most @p bound_, without computing the distance itself. Two tiers, chosen by the bound:
+ *
+ *  - **Small bounds (<= `automaton_max_bound_k`)**: a deterministic @b column automaton - the sliding diagonal
+ *    band of `2k + 1` capped DP values is the automaton state, advanced per text character with bit-parallel
+ *    match lookups against the shorter side. Costs O(k) per character regardless of the pattern length, and
+ *    the all-dead state is absorbing, so hopeless candidates are rejected mid-scan.
+ *  - **Large bounds**: the bit-parallel Myers/Hyyrö recurrence (same as `levenshtein_distance_myers`) with an
+ *    early exit once the running prefix distance minus the remaining text length provably exceeds the bound.
+ *
+ *  Both tiers share the per-symbol `match_masks` scratch layout of the Myers walker, and both are exact:
+ *  capping values at `bound + 1` never changes whether a cell is within the bound, per Ukkonen's cutoff
+ *  argument (`D[i][j] >= |i - j|`, so cells outside the band are dead weight). Reference pseudo-code for the
+ *  column automaton, against which this walker is differentially fuzzed:
+ *
+ *      band[j] = capped DP values D[i][j] for rows |i - j| <= k, capped at k + 1 ("dead")
+ *      band[0] = (0, 1, ..., k, dead, ...)                        # column zero: D[i][0] = i
+ *      for each text char c:                                      # advance one column
+ *          for each band offset o, row = j + 1 + o - k:
+ *              v = min(band[o] + (p[row-1] != c),                 # substitution, bit-parallel match test
+ *                      band[o + 1] + 1,                           # deletion from the old column
+ *                      next[o - 1] + 1,                           # insertion from the new column
+ *                      k + 1)                                     # capped: exactness only matters <= k
+ *          if every cell is dead: reject                          # absorbing state, proof in `automaton_`
+ *      accept iff band[m - n + k] <= k                            # row m of the final column
+ */
+template <typename char_or_rune_type_ = char, sz_capability_t capability_ = sz_cap_serial_k, typename enable_ = void>
+struct levenshtein_distance_within;
+
+template <>
+struct levenshtein_distance_within<char, sz_cap_serial_k> {
+
+    using char_t = char;
+    static constexpr sz_capability_t capability_k = sz_cap_serial_k;
+
+    /** @brief Largest bound handled by the sliding-band column automaton; wider bounds use bounded Myers. */
+    static constexpr size_t automaton_max_bound_k = 3;
+
+    using myers_t = levenshtein_distance_myers<char, sz_cap_serial_k>;
+
+    /** @brief The membership bound - the maximum edit distance that still counts as a match. */
+    size_t bound_ = 0;
+
+    levenshtein_distance_within() noexcept {}
+    explicit levenshtein_distance_within(size_t bound) noexcept : bound_(bound) {}
+
+    /** @brief Byte offsets of this walker's scratch sub-buffers. */
+    struct layout_t {
+        /** @brief The per-word `match_masks` tables (256 entries each), shared by both tiers. */
+        size_t match_masks = 0;
+        /** @brief The bounded-Myers per-word `vertical_positives` state (only past the on-stack capacity). */
+        size_t vertical_positives = 0;
+        /** @brief The bounded-Myers per-word `vertical_negatives` state (only past the on-stack capacity). */
+        size_t vertical_negatives = 0;
+        /** @brief Bytes this walker touches; doubles as its scratch-size estimate. */
+        size_t total = 0;
+        constexpr operator size_t() const noexcept { return total; }
+    };
+
+    /** @brief The single source of truth for this walker's scratch size and sub-buffer offsets. */
+    layout_t layout(span<char_t const> first, span<char_t const> second, cpu_specs_t const &specs) const noexcept {
+        size_t const shorter_length = sz_min_of_two(first.size(), second.size());
+        size_t const words_count = myers_t::dispatch_words_count_for(shorter_length);
+        scratch_amount_t amount {specs.cache_line_width};
+        layout_t at;
+        at.match_masks = amount, amount += sizeof(u64_t) * words_count * 256;
+        if (bound_ > automaton_max_bound_k && words_count > myers_t::stack_words_capacity_k) {
+            at.vertical_positives = amount, amount += sizeof(u64_t) * words_count;
+            at.vertical_negatives = amount, amount += sizeof(u64_t) * words_count;
+        }
+        at.total = amount;
+        return at;
+    }
+
+    /** @brief Scratch bytes for one `(first, second)` pair, as probed by the cross-product drivers. */
+    size_t scratch_space_needed(span<char_t const> first, span<char_t const> second,
+                                cpu_specs_t const &specs) const noexcept {
+        return layout(first, second, specs).total;
+    }
+
+    /**
+     *  @brief Builds the per-symbol `match_masks` table in @p match_masks: zeroes the rows of every symbol the
+     *      pair touches, then sets the shorter side's match bits. Mirrors the Myers walker's table policy, so
+     *      scratch reused across walkers stays consistent.
+     */
+    static void build_match_masks_(span<char const> shorter, span<char const> longer, u64_t *match_masks,
+                                   size_t words_count) noexcept {
+        for (size_t position = 0; position != shorter.size(); ++position)
+            for (size_t word = 0; word != words_count; ++word)
+                match_masks[(size_t)(u8_t)shorter[position] * words_count + word] = 0;
+        for (size_t position = 0; position != longer.size(); ++position)
+            for (size_t word = 0; word != words_count; ++word)
+                match_masks[(size_t)(u8_t)longer[position] * words_count + word] = 0;
+        for (size_t position = 0; position != shorter.size(); ++position)
+            match_masks[(size_t)(u8_t)shorter[position] * words_count + (position >> 6)] |= (u64_t)1 << (position & 63);
+    }
+
+    /** @brief Clears the shorter side's match bits after a scan, mirroring the Myers walker's cleanup. */
+    static void clear_match_masks_(span<char const> shorter, u64_t *match_masks, size_t words_count) noexcept {
+        for (size_t position = 0; position != shorter.size(); ++position)
+            match_masks[(size_t)(u8_t)shorter[position] * words_count + (position >> 6)] = 0;
+    }
+
+    /**
+     *  @brief The sliding-band column automaton for bounds up to `automaton_max_bound_k`. The state is the band of
+     *      `2k + 1` capped DP values around the diagonal; each text character advances it with a bit-parallel
+     *      substitution lookup. The all-dead state is absorbing (any alignment within the bound must cross the band,
+     *      and capped values only grow past it), so hopeless candidates bail mid-scan.
+     */
+    status_t automaton_(span<char const> shorter, span<char const> longer, u8_t &result_ref,
+                        scratch_space_t scratch_space) const noexcept {
+        size_t const bound = bound_;
+        size_t const shorter_length = shorter.size(), longer_length = longer.size();
+        size_t const words_count = myers_t::dispatch_words_count_for(shorter_length);
+        if (scratch_space.size() < sizeof(u64_t) * words_count * 256) return status_t::bad_alloc_k;
+        u64_t *const match_masks = reinterpret_cast<u64_t *>(scratch_space.data());
+        build_match_masks_(shorter, longer, match_masks, words_count);
+
+        size_t const capped = bound + 1, width = 2 * bound + 1;
+        u8_t current[2 * automaton_max_bound_k + 1], next[2 * automaton_max_bound_k + 1];
+        // Column `j = 0`: `D[i][0] = i` for valid rows, dead outside `[0, m]`.
+        for (size_t offset = 0; offset != width; ++offset) {
+            ssize_t const row = (ssize_t)offset - (ssize_t)bound;
+            current[offset] = (u8_t)(row >= 0 && (size_t)row <= shorter_length ? sz_min_of_two((size_t)row, capped)
+                                                                               : capped);
+        }
+
+        sz_bool_t alive = sz_true_k;
+        for (size_t j = 0; j != longer_length && alive == sz_true_k; ++j) {
+            u64_t const *const match_row = &match_masks[(size_t)(u8_t)longer[j] * words_count];
+            alive = sz_false_k;
+            for (size_t offset = 0; offset != width; ++offset) {
+                ssize_t const row = (ssize_t)(j + 1) + (ssize_t)offset - (ssize_t)bound;
+                if (row < 0 || (size_t)row > shorter_length) {
+                    next[offset] = (u8_t)capped;
+                    continue;
+                }
+                // The top boundary row `D[0][j] = j` holds no pattern prefix, so it has no substitution arc.
+                if (row == 0) {
+                    next[offset] = (u8_t)sz_min_of_two(j + 1, capped);
+                    if (next[offset] <= bound) alive = sz_true_k;
+                    continue;
+                }
+                size_t const old_center = current[offset];
+                size_t const old_right = offset + 1 < width ? current[offset + 1] : capped;
+                size_t const new_left = offset != 0 ? next[offset - 1] : capped;
+                size_t const matches = (match_row[(size_t)(row - 1) >> 6] >> ((size_t)(row - 1) & 63)) & 1;
+                size_t const substitution = old_center + (1 - matches);
+                size_t const value = sz_min_of_two(substitution, sz_min_of_two(old_right + 1, new_left + 1));
+                next[offset] = (u8_t)sz_min_of_two(value, capped);
+                if (next[offset] <= bound) alive = sz_true_k;
+            }
+            for (size_t offset = 0; offset != width; ++offset) current[offset] = next[offset];
+        }
+
+        clear_match_masks_(shorter, match_masks, words_count);
+        if (alive == sz_false_k) {
+            result_ref = sz_false_k;
+            return status_t::success_k;
+        }
+        // Row `m` sits at offset `m - (n - k)` in the final band; the caller's length prefilter keeps it in range.
+        result_ref = current[shorter_length + bound - longer_length] <= bound ? sz_true_k : sz_false_k;
+        return status_t::success_k;
+    }
+
+    /**
+     *  @brief The bit-parallel Myers/Hyyrö recurrence with an early exit for larger bounds. After consuming
+     *      @p j text characters the running distance is the exact `D[m][j]`; since `D[m][n] >= D[m][j] - (n - j)`,
+     *      the pair is hopeless once `distance - remaining > bound`. Uses a run-time block count, mirroring the
+     *      Myers walker's `generic_` path, including its on-stack state and scratch spill policy.
+     */
+    status_t bounded_myers_(span<char const> shorter, span<char const> longer, u8_t &result_ref,
+                            scratch_space_t scratch_space) const noexcept {
+        size_t const bound = bound_;
+        size_t const shorter_length = shorter.size(), longer_length = longer.size();
+        size_t const words_count = myers_t::words_count_for(shorter_length);
+        size_t const match_masks_bytes = sizeof(u64_t) * words_count * 256;
+        size_t const vertical_bytes = words_count > myers_t::stack_words_capacity_k ? sizeof(u64_t) * words_count : 0;
+        if (scratch_space.size() < match_masks_bytes + 2 * vertical_bytes) return status_t::bad_alloc_k;
+
+        u64_t *const match_masks = reinterpret_cast<u64_t *>(scratch_space.data());
+        u64_t stack_vertical_positives[myers_t::stack_words_capacity_k],
+            stack_vertical_negatives[myers_t::stack_words_capacity_k];
+        u64_t *vertical_positives = stack_vertical_positives;
+        u64_t *vertical_negatives = stack_vertical_negatives;
+        if (words_count > myers_t::stack_words_capacity_k) {
+            std::byte *const scratch_end = scratch_space.data() + scratch_space.size();
+            vertical_negatives = reinterpret_cast<u64_t *>(scratch_end - vertical_bytes);
+            vertical_positives = reinterpret_cast<u64_t *>(scratch_end - 2 * vertical_bytes);
+        }
+
+        build_match_masks_(shorter, longer, match_masks, words_count);
+
+        for (size_t word = 0; word != words_count; ++word)
+            vertical_positives[word] = ~(u64_t)0, vertical_negatives[word] = 0;
+        size_t const last_word = (shorter_length - 1) >> 6, last_bit = (shorter_length - 1) & 63;
+        size_t distance = shorter_length;
+        sz_bool_t alive = sz_true_k;
+        for (size_t longer_position = 0; longer_position != longer_length && alive == sz_true_k; ++longer_position) {
+            u64_t const *const match_row = &match_masks[(size_t)(u8_t)longer[longer_position] * words_count];
+            u64_t horizontal_positive_carry = 1, horizontal_negative_carry = 0; // Top-row boundary into block 0 is +1.
+            for (size_t word = 0; word != words_count; ++word) {
+                u64_t const pattern_matches = match_row[word];
+                u64_t const vertical_carry = pattern_matches | vertical_negatives[word];
+                u64_t const matched_with_carry = pattern_matches | horizontal_negative_carry;
+                u64_t const diagonal_zero =
+                    (((matched_with_carry & vertical_positives[word]) + vertical_positives[word]) ^
+                     vertical_positives[word]) |
+                    matched_with_carry;
+                u64_t horizontal_positive = vertical_negatives[word] | ~(diagonal_zero | vertical_positives[word]);
+                u64_t horizontal_negative = vertical_positives[word] & diagonal_zero;
+                if (word == last_word) {
+                    distance += (horizontal_positive >> last_bit) & 1;
+                    distance -= (horizontal_negative >> last_bit) & 1;
+                }
+                u64_t const horizontal_positive_carry_next = horizontal_positive >> 63;
+                u64_t const horizontal_negative_carry_next = horizontal_negative >> 63;
+                horizontal_positive = (horizontal_positive << 1) | horizontal_positive_carry;
+                horizontal_negative = (horizontal_negative << 1) | horizontal_negative_carry;
+                horizontal_positive_carry = horizontal_positive_carry_next;
+                horizontal_negative_carry = horizontal_negative_carry_next;
+                vertical_positives[word] = horizontal_negative | ~(vertical_carry | horizontal_positive);
+                vertical_negatives[word] = horizontal_positive & vertical_carry;
+            }
+            // `distance` is the exact prefix distance `D[m][j]`; the tail can close it by at most one per char.
+            size_t const remaining = longer_length - longer_position - 1;
+            if (distance > bound + remaining) alive = sz_false_k;
+        }
+
+        clear_match_masks_(shorter, match_masks, words_count);
+        result_ref = alive == sz_true_k && distance <= bound ? sz_true_k : sz_false_k;
+        return status_t::success_k;
+    }
+
+    /**
+     *  @brief Answers whether the unit-cost Levenshtein distance between @p first and @p second is at most
+     *      `bound_`, dispatching to the column automaton for small bounds and to bounded Myers for large ones.
+     *      The executor is accepted for signature compatibility with the cross-product drivers; the bounded
+     *      scan is single-threaded by design (its early exits make intra-pair cooperation counterproductive).
+     */
+    template <typename executor_type_ = dummy_executor_t>
+    status_t operator()(span<char const> const &first, span<char const> const &second, u8_t &result_ref,
+                        scratch_space_t scratch_space, executor_type_ && = {},
+                        cpu_specs_t const & = {}) const noexcept {
+        bool const first_is_shorter = first.size() <= second.size();
+        span<char const> shorter = first_is_shorter ? first : second;
+        span<char const> longer = first_is_shorter ? second : first;
+        size_t const shorter_length = shorter.size(), longer_length = longer.size();
+        size_t const bound = bound_;
+
+        // The length difference is a lower bound on the distance - the cheapest possible reject.
+        if (longer_length - shorter_length > bound) {
+            result_ref = sz_false_k;
+            return status_t::success_k;
+        }
+        if (bound == 0) {
+            sz_bool_t equal = shorter_length == longer_length ? sz_true_k : sz_false_k;
+            for (size_t position = 0; position != shorter_length && equal == sz_true_k; ++position)
+                if (shorter[position] != longer[position]) equal = sz_false_k;
+            result_ref = equal;
+            return status_t::success_k;
+        }
+        if (shorter_length == 0) {
+            result_ref = sz_true_k; // ? Only reachable with `longer_length <= bound` per the prefilter.
+            return status_t::success_k;
+        }
+        if (bound <= automaton_max_bound_k) return automaton_(shorter, longer, result_ref, scratch_space);
+        return bounded_myers_(shorter, longer, result_ref, scratch_space);
+    }
+};
+
+#pragma endregion Bounded Levenshtein(Within - k)
+
 /**
  *  @brief Computes the @b byte-level Levenshtein distance between two strings using the CPU backend.
  *  @sa `levenshtein_distance_utf8` for UTF-8 strings.
@@ -3741,6 +4029,59 @@ struct levenshtein_distances {
                                  executor_type_ &&executor, cpu_specs_t const &specs = {}) noexcept {
         return cross_in_parallel_<size_t>(scoring_t {substituter_, gap_costs_}, sequences, sequences, results,
                                           cross_similarities_t::symmetric_k, scratch_, executor, specs);
+    }
+};
+
+template <typename allocator_type_, sz_capability_t capability_, typename enable_>
+struct levenshtein_distances_within {
+
+    using allocator_t = allocator_type_;
+
+    static constexpr sz_capability_t capability_k = capability_;
+    static constexpr sz_capability_t capability_serialized_k = serialize_capability(capability_k);
+    using scoring_t = levenshtein_distance_within<char, capability_serialized_k>;
+
+    /** @brief The membership bound - the maximum edit distance that still counts as a match. */
+    size_t bound_ = 0;
+    allocator_t alloc_ {};
+
+    using scratch_allocator_t = typename std::allocator_traits<allocator_t>::template rebind_alloc<std::byte>;
+    safe_vector<std::byte, scratch_allocator_t> scratch_ {alloc_};
+
+    levenshtein_distances_within(allocator_t alloc = {}) noexcept : alloc_(alloc) {}
+    explicit levenshtein_distances_within(size_t bound, allocator_t alloc = allocator_t {}) noexcept
+        : bound_(bound), alloc_(alloc) {}
+
+    // The concrete `strided_rows<value_type_>` parameter disambiguates the two-set and symmetric overloads by type
+    // alone, since `SZ_HAS_CONCEPTS_` is off repo-wide for the GCC concepts bug.
+    template <typename queries_type_, typename candidates_type_, typename value_type_>
+    SZ_NOIPA status_t operator()(queries_type_ const &queries, candidates_type_ const &candidates,
+                                 strided_rows<value_type_> results, cpu_specs_t const &specs = {}) noexcept {
+        return cross_sequentially_<u8_t>(scoring_t {bound_}, queries, candidates, results,
+                                         cross_similarities_t::all_pairs_k, scratch_, specs);
+    }
+
+    template <typename queries_type_, typename candidates_type_, typename value_type_, typename executor_type_>
+    SZ_NOIPA status_t operator()(queries_type_ const &queries, candidates_type_ const &candidates,
+                                 strided_rows<value_type_> results, executor_type_ &&executor,
+                                 cpu_specs_t const &specs = {}) noexcept {
+        return cross_in_parallel_<u8_t>(scoring_t {bound_}, queries, candidates, results,
+                                        cross_similarities_t::all_pairs_k, scratch_, executor, specs);
+    }
+
+    /** @brief Symmetric self-similarity: one set tested against itself (lower triangle + mirror). */
+    template <typename sequences_type_, typename value_type_>
+    SZ_NOIPA status_t operator()(sequences_type_ const &sequences, strided_rows<value_type_> results,
+                                 cpu_specs_t const &specs = {}) noexcept {
+        return cross_sequentially_<u8_t>(scoring_t {bound_}, sequences, sequences, results,
+                                         cross_similarities_t::symmetric_k, scratch_, specs);
+    }
+
+    template <typename sequences_type_, typename value_type_, typename executor_type_>
+    SZ_NOIPA status_t operator()(sequences_type_ const &sequences, strided_rows<value_type_> results,
+                                 executor_type_ &&executor, cpu_specs_t const &specs = {}) noexcept {
+        return cross_in_parallel_<u8_t>(scoring_t {bound_}, sequences, sequences, results,
+                                        cross_similarities_t::symmetric_k, scratch_, executor, specs);
     }
 };
 
