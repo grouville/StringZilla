@@ -603,12 +603,12 @@ endfunction ()
 
 # StringZillas C-API entry units, compiled once per library - as C++ into the CPU one, as CUDA into the GPU one.
 set(STRINGZILLAS_API_CPP_SOURCES
-    c/stringzillas/runtime.cpp c/stringzillas/levenshtein.cpp c/stringzillas/needleman_wunsch.cpp
-    c/stringzillas/smith_waterman.cpp c/stringzillas/fingerprints.cpp
+    c/stringzillas/runtime.cpp c/stringzillas/levenshtein.cpp c/stringzillas/levenshtein_within.cpp
+    c/stringzillas/needleman_wunsch.cpp c/stringzillas/smith_waterman.cpp c/stringzillas/fingerprints.cpp
 )
 set(STRINGZILLAS_API_CU_SOURCES
-    c/stringzillas/runtime.cu c/stringzillas/levenshtein.cu c/stringzillas/needleman_wunsch.cu
-    c/stringzillas/smith_waterman.cu c/stringzillas/fingerprints.cu
+    c/stringzillas/runtime.cu c/stringzillas/levenshtein.cu c/stringzillas/levenshtein_within.cu
+    c/stringzillas/needleman_wunsch.cu c/stringzillas/smith_waterman.cu c/stringzillas/fingerprints.cu
 )
 # Per-ISA CPU instantiation units, host C++ in every library; off-platform files compile to empty objects.
 set(STRINGZILLAS_CPUS_SOURCES

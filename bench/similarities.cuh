@@ -29,6 +29,7 @@ using ashvardanian::stringzillas::levenshtein_icelake_t;
 using ashvardanian::stringzillas::levenshtein_serial_t;
 using ashvardanian::stringzillas::levenshtein_utf8_icelake_t;
 using ashvardanian::stringzillas::levenshtein_utf8_serial_t;
+using ashvardanian::stringzillas::levenshtein_within_haswell_t;
 using ashvardanian::stringzillas::levenshtein_within_serial_t;
 using ashvardanian::stringzillas::linear_gap_costs_t;
 using ashvardanian::stringzillas::affine_needleman_wunsch_haswell_t;
@@ -732,6 +733,18 @@ void bench_levenshtein_within(environment_t const &env) {
                 callable_no_op_t {},                    // preprocessing
                 similarities_within_equality_t {bound}) // equality check
                 .log(distances_baseline);
+
+#if SZ_USE_HASWELL
+        for (std::size_t bound : bounds)
+            bench_unary(
+                env, "levenshtein_within_haswell_k"s + std::to_string(bound) + ":"s + shape_label,
+                call_distances_baseline, // full distances, thresholded at `bound` by the equality check
+                similarities_callable_for<similarities_within_t, levenshtein_within_haswell_t, forkunion_executor_t &>(
+                    env, results_within_accelerated, shape, levenshtein_within_haswell_t {bound}, pool),
+                callable_no_op_t {},                    // preprocessing
+                similarities_within_equality_t {bound}) // equality check
+                .log(distances_baseline);
+#endif
     }
 }
 
