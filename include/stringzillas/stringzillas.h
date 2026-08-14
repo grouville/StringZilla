@@ -266,8 +266,8 @@ typedef void *szs_levenshtein_within_t;
  *  @brief Initialize a bounded Levenshtein membership engine.
  *
  *  Creates an engine answering "is the unit-cost edit distance at most `bound`?" without computing the
- *  distance itself: small bounds run a deterministic column automaton (a sliding diagonal band of `2 * bound + 1`
- *  capped DP values with an absorbing all-dead state), larger bounds run bit-parallel Myers with an early exit.
+ *  distance itself: a bit-parallel within-k NFA covers the tightest bound (one automaton level per machine
+ *  word), and larger bounds run bit-parallel Myers with an early exit, behind length-based prefilters.
  *
  *  @param[in] bound Maximum edit distance that still counts as a match.
  *  @param[in] alloc Memory allocator (NULL for default).

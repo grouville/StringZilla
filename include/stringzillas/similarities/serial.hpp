@@ -2527,30 +2527,29 @@ struct levenshtein_distance_myers<rune_t, sz_cap_serial_k> {
 
 /**
  *  @brief Bounded Levenshtein membership test: answers whether the unit-cost edit distance between two
- *      strings is at most @p bound_, without computing the distance itself. Two tiers, chosen by the bound:
+ *      strings is at most @p bound_, without computing the distance itself.
  *
- *  - **Small bounds (<= `automaton_max_bound_k`)**: a deterministic @b column automaton - the sliding diagonal
- *    band of `2k + 1` capped DP values is the automaton state, advanced per text character with bit-parallel
- *    match lookups against the shorter side. Costs O(k) per character regardless of the pattern length, and
- *    the all-dead state is absorbing, so hopeless candidates are rejected mid-scan.
- *  - **Large bounds**: the bit-parallel Myers/Hyyrö recurrence (same as `levenshtein_distance_myers`) with an
- *    early exit once the running prefix distance minus the remaining text length provably exceeds the bound.
+ *  Three tiers, all behind two prefilter fast paths (`|m - n| > bound` rejects on length alone, and
+ *  `bound >= max(m, n)` accepts without a scan); pattern length is unbounded:
  *
- *  Both tiers share the per-symbol `match_masks` scratch layout of the Myers walker, and both are exact:
- *  capping values at `bound + 1` never changes whether a cell is within the bound, per Ukkonen's cutoff
- *  argument (`D[i][j] >= |i - j|`, so cells outside the band are dead weight). Reference pseudo-code for the
- *  column automaton, against which this walker is differentially fuzzed:
+ *  - **`bound == 0`**: string equality.
+ *  - **`bound == 1`, shorter side <= 63**: the Wu-Manber / Navarro-Raffinot bit-parallel simulation of the
+ *    within-k Levenshtein @b automaton - each NFA level is one machine word, so a text character costs a
+ *    handful of branch-free word operations and nothing is spent tracking the exact distance.
+ *  - **Larger bounds or longer patterns**: the bit-parallel Myers/Hyyrö recurrence (same as
+ *    `levenshtein_distance_myers`, including its compile-time `1/2/4/8`-word tiers) with an early exit once
+ *    the running prefix distance minus the remaining text length provably exceeds the bound.
  *
- *      band[j] = capped DP values D[i][j] for rows |i - j| <= k, capped at k + 1 ("dead")
- *      band[0] = (0, 1, ..., k, dead, ...)                        # column zero: D[i][0] = i
- *      for each text char c:                                      # advance one column
- *          for each band offset o, row = j + 1 + o - k:
- *              v = min(band[o] + (p[row-1] != c),                 # substitution, bit-parallel match test
- *                      band[o + 1] + 1,                           # deletion from the old column
- *                      next[o - 1] + 1,                           # insertion from the new column
- *                      k + 1)                                     # capped: exactness only matters <= k
- *          if every cell is dead: reject                          # absorbing state, proof in `automaton_`
- *      accept iff band[m - n + k] <= k                            # row m of the final column
+ *  The tier shape is measured, not assumed (i5-9300H, word-like data, differential head-to-head in
+ *  `test/fuzz_levenshtein_within.cpp`'s tuning harness): the NFA wins at `bound == 1` for every accept mix,
+ *  ties on rejects and loses on accepts at `bound == 2`, and loses everywhere at `bound == 3`, because its
+ *  per-character cost grows with the bound while Myers' doesn't - the same trade-off that caps Lucene's
+ *  automaton at two edits. A symbolic sliding-band column automaton (the `2k + 1` capped DP values as state)
+ *  was implemented and benchmarked first, and removed: per-cell branchy transitions lose to both bit-parallel
+ *  forms at every bound. The fully determinized DFA (Lucene's form) needs a precompiled transition table
+ *  amortized over many candidates per pattern - a shared-query engine shape, not a per-pair one.
+ *  Both remaining tiers are exact by Ukkonen's cutoff argument (`D[i][j] >= |i - j|`), and the walker is
+ *  differentially fuzzed against a naive DP and the unbounded Myers walker.
  */
 template <typename char_or_rune_type_ = char, sz_capability_t capability_ = sz_cap_serial_k, typename enable_ = void>
 struct levenshtein_distance_within;
@@ -2560,9 +2559,6 @@ struct levenshtein_distance_within<char, sz_cap_serial_k> {
 
     using char_t = char;
     static constexpr sz_capability_t capability_k = sz_cap_serial_k;
-
-    /** @brief Largest bound handled by the sliding-band column automaton; wider bounds use bounded Myers. */
-    static constexpr size_t automaton_max_bound_k = 3;
 
     using myers_t = levenshtein_distance_myers<char, sz_cap_serial_k>;
 
@@ -2574,7 +2570,7 @@ struct levenshtein_distance_within<char, sz_cap_serial_k> {
 
     /** @brief Byte offsets of this walker's scratch sub-buffers. */
     struct layout_t {
-        /** @brief The per-word `match_masks` tables (256 entries each), shared by both tiers. */
+        /** @brief The per-word `match_masks` tables (256 entries each), shared with the Myers walker. */
         size_t match_masks = 0;
         /** @brief The bounded-Myers per-word `vertical_positives` state (only past the on-stack capacity). */
         size_t vertical_positives = 0;
@@ -2592,7 +2588,7 @@ struct levenshtein_distance_within<char, sz_cap_serial_k> {
         scratch_amount_t amount {specs.cache_line_width};
         layout_t at;
         at.match_masks = amount, amount += sizeof(u64_t) * words_count * 256;
-        if (bound_ > automaton_max_bound_k && words_count > myers_t::stack_words_capacity_k) {
+        if (words_count > myers_t::stack_words_capacity_k) {
             at.vertical_positives = amount, amount += sizeof(u64_t) * words_count;
             at.vertical_negatives = amount, amount += sizeof(u64_t) * words_count;
         }
@@ -2630,72 +2626,149 @@ struct levenshtein_distance_within<char, sz_cap_serial_k> {
     }
 
     /**
-     *  @brief The sliding-band column automaton for bounds up to `automaton_max_bound_k`. The state is the band of
-     *      `2k + 1` capped DP values around the diagonal; each text character advances it with a bit-parallel
-     *      substitution lookup. The all-dead state is absorbing (any alignment within the bound must cross the band,
-     *      and capped values only grow past it), so hopeless candidates bail mid-scan.
+     *  @brief The bit-parallel Myers/Hyyrö recurrence with an early exit, over a compile-time block count covering
+     *      shorter sides up to `words_count_ * 64` runes. Mirrors the Myers walker's `unrolled_` tiers so the block
+     *      loop collapses into registers - the run-time loop of `bounded_myers_` measurably costs against the
+     *      full-distance baseline on short words. After consuming `j` text characters the running distance is the
+     *      exact `D[m][j]`; since `D[m][n] >= D[m][j] - (n - j)`, the pair is hopeless once
+     *      `distance - remaining > bound`.
      */
-    status_t automaton_(span<char const> shorter, span<char const> longer, u8_t &result_ref,
-                        scratch_space_t scratch_space) const noexcept {
+    template <u32_t words_count_> // 1, 2, 4, 8 → shorter <= 64, 128, 256, 512
+    status_t bounded_unrolled_(span<char const> shorter, span<char const> longer, u8_t &result_ref,
+                               scratch_space_t scratch_space) const noexcept {
         size_t const bound = bound_;
-        size_t const shorter_length = shorter.size(), longer_length = longer.size();
-        size_t const words_count = myers_t::dispatch_words_count_for(shorter_length);
-        if (scratch_space.size() < sizeof(u64_t) * words_count * 256) return status_t::bad_alloc_k;
-        u64_t *const match_masks = reinterpret_cast<u64_t *>(scratch_space.data());
-        build_match_masks_(shorter, longer, match_masks, words_count);
+        u32_t const shorter_length = (u32_t)shorter.size();
+        size_t const longer_length = longer.size();
+        if (shorter_length > words_count_ * 64) return status_t::unexpected_dimensions_k;
+        if (scratch_space.size() < sizeof(u64_t) * words_count_ * 256) return status_t::bad_alloc_k;
 
-        size_t const capped = bound + 1, width = 2 * bound + 1;
-        u8_t current[2 * automaton_max_bound_k + 1], next[2 * automaton_max_bound_k + 1];
-        // Column `j = 0`: `D[i][0] = i` for valid rows, dead outside `[0, m]`.
-        for (size_t offset = 0; offset != width; ++offset) {
-            ssize_t const row = (ssize_t)offset - (ssize_t)bound;
-            current[offset] = (u8_t)(row >= 0 && (size_t)row <= shorter_length ? sz_min_of_two((size_t)row, capped)
-                                                                               : capped);
-        }
+        using match_masks_t = u64_t[words_count_][256];
+        match_masks_t &match_masks = *reinterpret_cast<match_masks_t *>(scratch_space.data());
+        // Every block of every touched character is read, so zero them all before building the table - the
+        // same policy as the Myers walker's `unrolled_`, keeping scratch reusable across walkers.
+        for (u32_t position = 0; position != shorter_length; ++position)
+            for (u32_t word = 0; word != words_count_; ++word) match_masks[word][(u8_t)shorter[position]] = 0;
+        for (size_t position = 0; position != longer_length; ++position)
+            for (u32_t word = 0; word != words_count_; ++word) match_masks[word][(u8_t)longer[position]] = 0;
+        for (u32_t position = 0; position != shorter_length; ++position)
+            match_masks[position >> 6][(u8_t)shorter[position]] |= (u64_t)1 << (position & 63);
 
+        u64_t vertical_positives[words_count_], vertical_negatives[words_count_];
+        for (u32_t word = 0; word != words_count_; ++word)
+            vertical_positives[word] = ~(u64_t)0, vertical_negatives[word] = 0;
+        // `shorter_length` can't be zero here - the caller answers empty patterns before dispatching.
+        u32_t const last_word = (shorter_length - 1) >> 6, last_bit = (shorter_length - 1) & 63;
+        size_t distance = shorter_length;
         sz_bool_t alive = sz_true_k;
-        for (size_t j = 0; j != longer_length && alive == sz_true_k; ++j) {
-            u64_t const *const match_row = &match_masks[(size_t)(u8_t)longer[j] * words_count];
-            alive = sz_false_k;
-            for (size_t offset = 0; offset != width; ++offset) {
-                ssize_t const row = (ssize_t)(j + 1) + (ssize_t)offset - (ssize_t)bound;
-                if (row < 0 || (size_t)row > shorter_length) {
-                    next[offset] = (u8_t)capped;
-                    continue;
+        for (size_t longer_position = 0; longer_position != longer_length && alive == sz_true_k; ++longer_position) {
+            u8_t const symbol = (u8_t)longer[longer_position];
+            u64_t horizontal_positive_carry = 1, horizontal_negative_carry = 0; // Top-row boundary into block 0 is +1.
+            for (u32_t word = 0; word != words_count_; ++word) {
+                u64_t const pattern_matches = match_masks[word][symbol];
+                u64_t const vertical_carry = pattern_matches | vertical_negatives[word];
+                u64_t const matched_with_carry = pattern_matches | horizontal_negative_carry;
+                u64_t const diagonal_zero =
+                    (((matched_with_carry & vertical_positives[word]) + vertical_positives[word]) ^
+                     vertical_positives[word]) |
+                    matched_with_carry;
+                u64_t horizontal_positive = vertical_negatives[word] | ~(diagonal_zero | vertical_positives[word]);
+                u64_t horizontal_negative = vertical_positives[word] & diagonal_zero;
+                if (word == last_word) {
+                    distance += (horizontal_positive >> last_bit) & 1;
+                    distance -= (horizontal_negative >> last_bit) & 1;
                 }
-                // The top boundary row `D[0][j] = j` holds no pattern prefix, so it has no substitution arc.
-                if (row == 0) {
-                    next[offset] = (u8_t)sz_min_of_two(j + 1, capped);
-                    if (next[offset] <= bound) alive = sz_true_k;
-                    continue;
-                }
-                size_t const old_center = current[offset];
-                size_t const old_right = offset + 1 < width ? current[offset + 1] : capped;
-                size_t const new_left = offset != 0 ? next[offset - 1] : capped;
-                size_t const matches = (match_row[(size_t)(row - 1) >> 6] >> ((size_t)(row - 1) & 63)) & 1;
-                size_t const substitution = old_center + (1 - matches);
-                size_t const value = sz_min_of_two(substitution, sz_min_of_two(old_right + 1, new_left + 1));
-                next[offset] = (u8_t)sz_min_of_two(value, capped);
-                if (next[offset] <= bound) alive = sz_true_k;
+                u64_t const horizontal_positive_carry_next = horizontal_positive >> 63;
+                u64_t const horizontal_negative_carry_next = horizontal_negative >> 63;
+                horizontal_positive = (horizontal_positive << 1) | horizontal_positive_carry;
+                horizontal_negative = (horizontal_negative << 1) | horizontal_negative_carry;
+                horizontal_positive_carry = horizontal_positive_carry_next;
+                horizontal_negative_carry = horizontal_negative_carry_next;
+                vertical_positives[word] = horizontal_negative | ~(vertical_carry | horizontal_positive);
+                vertical_negatives[word] = horizontal_positive & vertical_carry;
             }
-            for (size_t offset = 0; offset != width; ++offset) current[offset] = next[offset];
+            // `distance` is the exact prefix distance `D[m][j]`; the tail can close it by at most one per char.
+            size_t const remaining = longer_length - longer_position - 1;
+            if (distance > bound + remaining) alive = sz_false_k;
         }
 
-        clear_match_masks_(shorter, match_masks, words_count);
-        if (alive == sz_false_k) {
-            result_ref = sz_false_k;
-            return status_t::success_k;
-        }
-        // Row `m` sits at offset `m - (n - k)` in the final band; the caller's length prefilter keeps it in range.
-        result_ref = current[shorter_length + bound - longer_length] <= bound ? sz_true_k : sz_false_k;
+        for (u32_t position = 0; position != shorter_length; ++position)
+            match_masks[position >> 6][(u8_t)shorter[position]] = 0;
+        result_ref = alive == sz_true_k && distance <= bound ? sz_true_k : sz_false_k;
         return status_t::success_k;
     }
 
     /**
-     *  @brief The bit-parallel Myers/Hyyrö recurrence with an early exit for larger bounds. After consuming
+     *  @brief Largest bound handled by the bit-parallel within-k NFA tier (state is `bound + 1` machine words).
+     *      Measured head-to-head against `bounded_unrolled_<1>` on word-like data (i5-9300H): the NFA wins at
+     *      every accept mix for `bound == 1` (+4-6%), ties on rejects and loses on accepts at `bound == 2`, and
+     *      loses everywhere at `bound == 3` - its per-character cost grows with the bound while Myers' doesn't.
+     */
+    static constexpr size_t nfa_max_bound_k = 1;
+
+    /**
+     *  @brief The Wu-Manber / Navarro-Raffinot bit-parallel simulation of the within-k Levenshtein @b automaton,
+     *      for shorter sides up to 63 runes. Level `j` of the NFA is one 64-bit word whose bit `i` is set iff the
+     *      DP cell `D[i][t]` (row @b `i`, rows 0..m) is at most `j` after `t` consumed text characters; each text
+     *      character advances every level with a handful of branch-free word operations, cheaper per character
+     *      than the distance-tracking Myers recurrence - the automaton pays per @b bound, not per distance bit.
+     *      The boundaries are global-alignment ones (no free restart): level `j` initializes to bits `0..j`
+     *      (`D[i][0] = i <= j`), and the top row `D[0][t] = t` injects bit 0 while `t <= j`. The all-zero state
+     *      is absorbing once the boundary stops injecting (column past the bound), so hopeless pairs bail
+     *      mid-scan. Acceptance is bit `m` of the `bound_` level: `D[m][n] <= bound`.
+     */
+    template <u32_t bound_>
+    status_t nfa_unrolled_(span<char const> shorter, span<char const> longer, u8_t &result_ref,
+                           scratch_space_t scratch_space) const noexcept {
+        u32_t const shorter_length = (u32_t)shorter.size();
+        size_t const longer_length = longer.size();
+        if (shorter_length > 63) return status_t::unexpected_dimensions_k; // ? Rows `0..m` must fit one word.
+        if (scratch_space.size() < sizeof(u64_t) * 256) return status_t::bad_alloc_k;
+        u64_t *const match_masks = reinterpret_cast<u64_t *>(scratch_space.data());
+        build_match_masks_(shorter, longer, match_masks, 1);
+
+        u64_t levels[bound_ + 1];
+        for (u32_t level = 0; level != bound_ + 1; ++level)
+            levels[level] = ((u64_t)2 << level) - 1; // ? `D[i][0] = i <= level` sets bits `0..level`.
+
+        sz_bool_t alive = sz_true_k;
+        for (size_t position = 0; position != longer_length; ++position) {
+            // Bit `i` of the shifted mask marks `longer[position] == shorter[i - 1]`, aligning the diagonal
+            // match term (`from row i - 1`) with the pattern character it consumes.
+            u64_t const equality = match_masks[(u8_t)longer[position]] << 1;
+            // Diagonal match keeps the error count; insertion (old column, same row), substitution (old column,
+            // row above), and deletion (new column, row above) each consume one error from the lower level.
+            u64_t old_lower = levels[0];
+            levels[0] = (levels[0] << 1) & equality;
+            u64_t new_lower = levels[0];
+            for (u32_t level = 1; level != bound_ + 1; ++level) {
+                u64_t const old_current = levels[level];
+                u64_t updated = ((old_current << 1) & equality) | old_lower | (old_lower << 1) | (new_lower << 1);
+                if (position < level) updated |= 1; // ? Top-row boundary: `D[0][t] = t` fits while `t <= level`.
+                levels[level] = updated;
+                old_lower = old_current, new_lower = updated;
+            }
+            // All-zero is absorbing once the boundary can no longer inject (columns past the bound).
+            if (position + 1 >= bound_) {
+                u64_t any = levels[0];
+                for (u32_t level = 1; level != bound_ + 1; ++level) any |= levels[level];
+                if (any == 0) {
+                    alive = sz_false_k;
+                    break;
+                }
+            }
+        }
+
+        clear_match_masks_(shorter, match_masks, 1);
+        result_ref = alive == sz_true_k && ((levels[bound_] >> shorter_length) & 1) ? sz_true_k : sz_false_k;
+        return status_t::success_k;
+    }
+
+    /**
+     *  @brief The bit-parallel Myers/Hyyrö recurrence with an early exit for larger bounds, over a run-time block
+     *      count - the fallback for shorter sides past the 512-rune unrolled tiers, mirroring the Myers walker's
+     *      `generic_` path, including its on-stack state and scratch spill policy. After consuming
      *      @p j text characters the running distance is the exact `D[m][j]`; since `D[m][n] >= D[m][j] - (n - j)`,
-     *      the pair is hopeless once `distance - remaining > bound`. Uses a run-time block count, mirroring the
-     *      Myers walker's `generic_` path, including its on-stack state and scratch spill policy.
+     *      the pair is hopeless once `distance - remaining > bound`.
      */
     status_t bounded_myers_(span<char const> shorter, span<char const> longer, u8_t &result_ref,
                             scratch_space_t scratch_space) const noexcept {
@@ -2762,9 +2835,10 @@ struct levenshtein_distance_within<char, sz_cap_serial_k> {
 
     /**
      *  @brief Answers whether the unit-cost Levenshtein distance between @p first and @p second is at most
-     *      `bound_`, dispatching to the column automaton for small bounds and to bounded Myers for large ones.
-     *      The executor is accepted for signature compatibility with the cross-product drivers; the bounded
-     *      scan is single-threaded by design (its early exits make intra-pair cooperation counterproductive).
+     *      `bound_`: prefilter fast paths first, then the bit-parallel within-k NFA for tight bounds on
+     *      single-word patterns, and bounded Myers with an early exit past that. The executor is accepted for
+     *      signature compatibility with the cross-product drivers; the bounded scan is single-threaded by design
+     *      (its early exits make intra-pair cooperation counterproductive).
      */
     template <typename executor_type_ = dummy_executor_t>
     status_t operator()(span<char const> const &first, span<char const> const &second, u8_t &result_ref,
@@ -2792,8 +2866,19 @@ struct levenshtein_distance_within<char, sz_cap_serial_k> {
             result_ref = sz_true_k; // ? Only reachable with `longer_length <= bound` per the prefilter.
             return status_t::success_k;
         }
-        if (bound <= automaton_max_bound_k) return automaton_(shorter, longer, result_ref, scratch_space);
-        return bounded_myers_(shorter, longer, result_ref, scratch_space);
+        if (bound >= longer_length) {
+            // Even rewriting every character fits the bound: `distance <= longer` always holds
+            // (substitute the whole shorter side, then insert the difference).
+            result_ref = sz_true_k;
+            return status_t::success_k;
+        }
+        if (bound == nfa_max_bound_k && shorter_length <= 63)
+            return nfa_unrolled_<nfa_max_bound_k>(shorter, longer, result_ref, scratch_space);
+        if (shorter_length <= 64) return bounded_unrolled_<1>(shorter, longer, result_ref, scratch_space);
+        if (shorter_length <= 128) return bounded_unrolled_<2>(shorter, longer, result_ref, scratch_space);
+        if (shorter_length <= 256) return bounded_unrolled_<4>(shorter, longer, result_ref, scratch_space);
+        if (shorter_length <= 512) return bounded_unrolled_<8>(shorter, longer, result_ref, scratch_space);
+        return bounded_myers_(shorter, longer, result_ref, scratch_space); // any longer shorter side
     }
 };
 
