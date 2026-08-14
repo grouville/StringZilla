@@ -1,6 +1,6 @@
 /**
  *  @file c/stringzillas/levenshtein_within.cuh
- *  @brief Bounded Levenshtein membership shim (CPU serial & Haswell backends).
+ *  @brief Bounded Levenshtein membership shim (CPU serial, Haswell & Ice Lake backends).
  *  @author Ash Vardanian
  */
 #ifndef STRINGZILLAS_SZS_LEVENSHTEIN_WITHIN_CUH_
@@ -78,6 +78,13 @@ SZ_API_RUNTIME sz_status_t szs_levenshtein_within_init(  //
     sz_unused_(alloc);        // Custom allocator not yet implemented, using default
     sz_unused_(capabilities); // Optional backends may be compiled out
     sz_assert_(engine_punned != nullptr && *engine_punned == nullptr && "Engine must be uninitialized");
+
+#if SZ_USE_ICELAKE
+    bool const can_use_icelake = (capabilities & sz_cap_icelake_k) == sz_cap_icelake_k;
+    if (can_use_icelake)
+        return emplace_levenshtein_within_engine<szs::levenshtein_within_icelake_t>(engine_punned, error_message,
+                                                                                    bound);
+#endif // SZ_USE_ICELAKE
 
 #if SZ_USE_HASWELL
     bool const can_use_haswell = (capabilities & sz_cap_haswell_k) == sz_cap_haswell_k;

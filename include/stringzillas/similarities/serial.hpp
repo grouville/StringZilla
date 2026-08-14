@@ -700,6 +700,7 @@ using affine_smith_waterman_serial_t =
 /** @brief The bounded Levenshtein membership engines, mirroring the distance engine aliases per backend. */
 using levenshtein_within_serial_t = levenshtein_distances_within<malloc_t, sz_cap_serial_k>;
 using levenshtein_within_haswell_t = levenshtein_distances_within<malloc_t, sz_caps_sh_k>;
+using levenshtein_within_icelake_t = levenshtein_distances_within<malloc_t, sz_caps_sil_k>;
 
 /**
  *  In @b AVX-512:
