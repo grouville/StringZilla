@@ -1683,6 +1683,264 @@ struct levenshtein_distance_myers<char, capability_, std::enable_if_t<(capabilit
     }
 };
 
+#pragma region Inter Sequence Byte Within
+
+/**
+ *  @brief AVX-512 bounded unit-cost Levenshtein @b membership for Ice Lake - "is the edit distance at most
+ *      `bound_`?" - the eight-lane batch twin of the serial `levenshtein_distance_within` NFA/Myers walker. Single
+ *      pairs delegate to the serial walker (one pair gains nothing from AVX-512 batching, exactly like the Myers
+ *      walker); the cross-product engines batch eight pairs into `within_8x64_`, the bounded twin of
+ *      `distances_8x64_`: same per-lane `match_masks[8][256]` table and transposed-text scratch, plus a per-lane
+ *      early exit that freezes hopeless lanes mid-scan. A query-major group whose shared query fits one Myers word
+ *      pays the `match_masks` build once via `within_8x64_shared_query_`, the bounded twin of
+ *      `distances_8x64_shared_query_`.
+ */
+template <sz_capability_t capability_>
+struct levenshtein_distance_within<char, capability_, std::enable_if_t<(capability_ & sz_cap_icelake_k) != 0>> {
+
+    using char_t = char;
+    using index_t = u32_t;
+    static constexpr index_t lanes_k = 8;
+    static constexpr size_t match_masks_bytes_k = sizeof(u64_t) * lanes_k * 256; // ? 16 KB `match_masks` table.
+
+    using serial_t = levenshtein_distance_within<char, sz_cap_serial_k>; // ? Per-pair NFA/bounded-Myers tiers.
+    using myers_t = levenshtein_distance_myers<char, capability_>;       // ? Shares the AVX-512 boolean lowerings.
+
+    /** @brief The membership bound - the maximum edit distance that still counts as a match. */
+    size_t bound_ = 0;
+
+    levenshtein_distance_within() noexcept {}
+    explicit levenshtein_distance_within(size_t bound) noexcept : bound_(bound) {}
+
+    /** @brief Single-pair scratch sizing for the per-pair engine path - delegated to the serial walker (one pair
+     *      gains nothing from AVX-512 batching; the 8-lane kernels serve the cross-product). */
+    auto layout(span<char_t const> first, span<char_t const> second, cpu_specs_t const &specs) const noexcept {
+        return serial_t {bound_}.layout(first, second, specs);
+    }
+
+    /** @brief Scratch bytes for one `(first, second)` pair, as probed by the cross-product drivers. */
+    size_t scratch_space_needed(span<char_t const> first, span<char_t const> second,
+                                cpu_specs_t const &specs) const noexcept {
+        return layout(first, second, specs).total;
+    }
+
+    /** @brief Single-pair membership (per-pair engine path) - delegated to the serial walker. */
+    status_t operator()(span<char_t const> const &first, span<char_t const> const &second, u8_t &result_ref,
+                        scratch_space_t scratch_space) noexcept {
+        return serial_t {bound_}(first, second, result_ref, scratch_space);
+    }
+
+    /**
+     *  @brief Eight independent single-word bounded memberships, one per 64-bit ZMM lane (each shorter side <= 64).
+     *      The Myers scan is bit-for-bit `distances_8x64_`; the bounded delta is a per-lane early exit: after
+     *      consuming `position + 1` text characters the lane's `score` is the exact prefix distance
+     *      `D[m][position + 1]`, and the remaining text closes it by at most one edit per character, so a lane with
+     *      `score > bound + remaining` can never come back within the bound - it freezes out of `active` (the same
+     *      mask guard that parks finished lanes) and reports a mismatch. The whole loop breaks once no lane is still
+     *      alive, so a tile of hopeless pairs costs its shortest proof, not its longest scan.
+     *
+     *      @p scratch_space holds the `match_masks[8][256]` table (`match_masks_bytes_k`) followed by a
+     *      transposed-text buffer of at least `max_longer * 8` bytes - the same layout as `distances_8x64_`.
+     */
+    template <typename results_writer_>
+    status_t within_8x64_(lane_pairs_view<char_t> const &pairs, results_writer_ &results,
+                          scratch_space_t scratch_space) const noexcept {
+
+        size_t max_longer = 0;
+        for (index_t lane_index = 0; lane_index != pairs.lanes_count(); ++lane_index)
+            max_longer = sz_max_of_two(max_longer, pairs.longers[lane_index].size());
+        if (scratch_space.size() < match_masks_bytes_k + max_longer * lanes_k) return status_t::bad_alloc_k;
+
+        u64_t *const match_masks = reinterpret_cast<u64_t *>(scratch_space.data()); // ? Indexed `lane * 256 + symbol`.
+        u8_t *const transposed_text = reinterpret_cast<u8_t *>(scratch_space.data() + match_masks_bytes_k);
+        alignas(64) u64_t top_bits[lanes_k] = {0}, shorter_lengths[lanes_k] = {0}, longer_lengths[lanes_k] = {0};
+        for (size_t position = 0; position != max_longer * lanes_k; ++position) transposed_text[position] = 0;
+
+        for (index_t lane_index = 0; lane_index != pairs.lanes_count(); ++lane_index) {
+            index_t const shorter_length = (index_t)pairs.shorters[lane_index].size();
+            size_t const longer_length = pairs.longers[lane_index].size();
+            char_t const *const shorter = pairs.shorters[lane_index].data();
+            char_t const *const longer = pairs.longers[lane_index].data();
+            // Zero this lane's `match_masks` entries for every character its text may read (see the scalar Myers).
+            for (index_t position = 0; position != shorter_length; ++position)
+                match_masks[lane_index * 256 + (u8_t)shorter[position]] = 0;
+            for (size_t position = 0; position != longer_length; ++position)
+                match_masks[lane_index * 256 + (u8_t)longer[position]] = 0;
+            for (index_t position = 0; position != shorter_length; ++position)
+                match_masks[lane_index * 256 + (u8_t)shorter[position]] |= (u64_t)1 << position;
+            top_bits[lane_index] = (u64_t)1 << (shorter_length - 1);
+            shorter_lengths[lane_index] = shorter_length;
+            longer_lengths[lane_index] = longer_length;
+            for (size_t position = 0; position != longer_length; ++position)
+                transposed_text[position * lanes_k + lane_index] = (u8_t)longer[position];
+        }
+
+        __m512i const lane_offsets = _mm512_set_epi64(7 * 256, 6 * 256, 5 * 256, 4 * 256, 3 * 256, 2 * 256, 1 * 256, 0);
+        __m512i const one = _mm512_set1_epi64(1);
+        __m512i const top_mask = _mm512_load_si512(top_bits), longer_vec = _mm512_load_si512(longer_lengths);
+        __m512i const length_vec = _mm512_load_si512(shorter_lengths);
+        // The exit threshold sums `bound` with the per-position remainder; capping it far past any reachable
+        // score keeps the sum overflow-free, and no lane can ever outrun a cap this loose, so the clamp
+        // never freezes a viable lane (clamping to anything near real distances would be unsound).
+        __m512i const bound_vec = _mm512_set1_epi64((long long)sz_min_of_two(bound_, (u64_t)1 << 62));
+        // VP = the low `shorter_length` bits set (a shift count of 64 yields 0, so `(1 << 64) - 1` == ~0).
+        __m512i vertical_positive = _mm512_sub_epi64(_mm512_sllv_epi64(one, length_vec), one);
+        __m512i vertical_negative = _mm512_setzero_si512();
+        __m512i score = length_vec;
+        __mmask8 dead = 0; // ? Lanes proven hopeless, frozen out of the scan.
+
+        for (size_t position = 0; position != max_longer; ++position) {
+            __mmask8 const live = _mm512_cmpgt_epi64_mask(longer_vec, _mm512_set1_epi64((long long)position));
+            __mmask8 const active = (__mmask8)(live & ~dead);
+            __m512i const symbols = _mm512_cvtepu8_epi64(
+                _mm_loadl_epi64((__m128i const *)(transposed_text + position * lanes_k)));
+            __m512i const equality = _mm512_i64gather_epi64(_mm512_add_epi64(lane_offsets, symbols), match_masks, 8);
+            __m512i const carry_in = _mm512_or_si512(equality, vertical_negative);
+            // Xh = (((Eq & VP) + VP) ^ VP) | Eq; the trailing `(sum ^ VP) | Eq` folds into one VPTERNLOGQ (0xBE).
+            __m512i const sum = _mm512_add_epi64(_mm512_and_si512(equality, vertical_positive), vertical_positive);
+            __m512i const diagonal = _mm512_ternarylogic_epi64(sum, vertical_positive, equality,
+                                                               myers_t::ternlog_xor_or_k);
+            // Ph = Mv | ~(Xh | VP) is `A | ~(B | C)` → VPTERNLOGQ(0xF1).
+            __m512i horizontal_positive = _mm512_ternarylogic_epi64(vertical_negative, diagonal, vertical_positive,
+                                                                    myers_t::ternlog_or_nor_k);
+            __m512i horizontal_negative = _mm512_and_si512(vertical_positive, diagonal);
+            score = _mm512_mask_add_epi64(score, active & _mm512_test_epi64_mask(horizontal_positive, top_mask), score,
+                                          one);
+            score = _mm512_mask_sub_epi64(score, active & _mm512_test_epi64_mask(horizontal_negative, top_mask), score,
+                                          one);
+            horizontal_positive = _mm512_or_si512(_mm512_slli_epi64(horizontal_positive, 1), one);
+            horizontal_negative = _mm512_slli_epi64(horizontal_negative, 1);
+            // Pv' = Mh | ~(Xv | Ph), the same `A | ~(B | C)` shape → VPTERNLOGQ(0xF1).
+            __m512i const next_positive = _mm512_ternarylogic_epi64(horizontal_negative, carry_in, horizontal_positive,
+                                                                    myers_t::ternlog_or_nor_k);
+            __m512i const next_negative = _mm512_and_si512(horizontal_positive, carry_in);
+            vertical_positive = _mm512_mask_blend_epi64(active, vertical_positive, next_positive);
+            vertical_negative = _mm512_mask_blend_epi64(active, vertical_negative, next_negative);
+            // `score` is the exact prefix distance `D[m][position + 1]`; the tail can close it by at most one
+            // per character, so `score - remaining > bound` is hopeless. Scores and bounds stay far below
+            // 2^62, so a signed `cmpgt` is exact here.
+            __m512i const remaining = _mm512_sub_epi64(longer_vec, _mm512_set1_epi64((long long)(position + 1)));
+            dead = (__mmask8)(dead | (active & _mm512_cmpgt_epi64_mask(score, _mm512_add_epi64(bound_vec, remaining))));
+            if ((__mmask8)(live & ~dead) == 0) break; // ? Every lane finished or froze.
+        }
+
+        alignas(64) u64_t final_scores[lanes_k];
+        _mm512_store_si512(final_scores, score);
+        for (index_t lane_index = 0; lane_index != pairs.lanes_count(); ++lane_index)
+            results[pairs.positions[lane_index]] = (size_t)((dead & (__mmask8)(1 << lane_index)) == 0 &&
+                                                            final_scores[lane_index] <= bound_);
+        return status_t::success_k;
+    }
+
+    /**
+     *  @brief Cross-product single-word bounded memberships: one shared @p query against up to 8 @p candidates per
+     *      call, building the 256-entry `match_masks` table once from the query and reusing it across all 8 ZMM lanes
+     *      - the bounded twin of `distances_8x64_shared_query_`, with the same per-lane early exit as `within_8x64_`.
+     *
+     *      The query is the Myers pattern for every lane and each candidate is that lane's text. Unit-cost edit
+     *      distance is symmetric, so this is correct even when a candidate is shorter than the query; the prefix
+     *      early-exit argument (`D[m][j] - (n - j) > bound` is hopeless) holds for any pattern/text split.
+     *
+     *      @pre `query.size() <= 64` (single 64-bit Myers integer per lane). No runtime check is performed.
+     *      @p scratch_space holds the single `match_masks[256]` table (256 `u64`) followed by a transposed-text
+     *      buffer of at least `max_candidate_length * 8` bytes.
+     */
+    template <typename results_writer_>
+    status_t within_8x64_shared_query_(span<char_t const> query, span<span<char_t const> const> candidates,
+                                       results_writer_ &results, scratch_space_t scratch_space) const noexcept {
+
+        static constexpr size_t shared_match_masks_bytes_k = sizeof(u64_t) * 256;
+
+        size_t max_candidate_length = 0;
+        for (index_t lane_index = 0; lane_index != candidates.size(); ++lane_index)
+            max_candidate_length = sz_max_of_two(max_candidate_length, candidates[lane_index].size());
+        if (scratch_space.size() < shared_match_masks_bytes_k + max_candidate_length * lanes_k)
+            return status_t::bad_alloc_k;
+
+        u64_t *const match_masks = reinterpret_cast<u64_t *>(scratch_space.data()); // ? Indexed by `symbol` alone.
+        u8_t *const transposed_text = reinterpret_cast<u8_t *>(scratch_space.data() + shared_match_masks_bytes_k);
+        alignas(64) u64_t top_bits[lanes_k] = {0}, shorter_lengths[lanes_k] = {0}, longer_lengths[lanes_k] = {0};
+        for (size_t position = 0; position != max_candidate_length * lanes_k; ++position) transposed_text[position] = 0;
+
+        index_t const query_length = (index_t)query.size();
+        char_t const *const query_data = query.data();
+        // Clear every symbol the query and any candidate may read so stale bits from a prior query cannot leak in.
+        for (index_t position = 0; position != query_length; ++position) match_masks[(u8_t)query_data[position]] = 0;
+        for (index_t lane_index = 0; lane_index != candidates.size(); ++lane_index) {
+            size_t const candidate_length = candidates[lane_index].size();
+            char_t const *const candidate = candidates[lane_index].data();
+            for (size_t position = 0; position != candidate_length; ++position)
+                match_masks[(u8_t)candidate[position]] = 0;
+        }
+        for (index_t position = 0; position != query_length; ++position)
+            match_masks[(u8_t)query_data[position]] |= (u64_t)1 << position;
+
+        for (index_t lane_index = 0; lane_index != candidates.size(); ++lane_index) {
+            size_t const candidate_length = candidates[lane_index].size();
+            char_t const *const candidate = candidates[lane_index].data();
+            top_bits[lane_index] = (u64_t)1 << (query_length - 1);
+            shorter_lengths[lane_index] = query_length;
+            longer_lengths[lane_index] = candidate_length;
+            for (size_t position = 0; position != candidate_length; ++position)
+                transposed_text[position * lanes_k + lane_index] = (u8_t)candidate[position];
+        }
+
+        __m512i const lane_offsets = _mm512_setzero_si512(); // ? Every lane reads the one shared table at `symbol`.
+        __m512i const one = _mm512_set1_epi64(1);
+        __m512i const top_mask = _mm512_load_si512(top_bits), longer_vec = _mm512_load_si512(longer_lengths);
+        __m512i const length_vec = _mm512_load_si512(shorter_lengths);
+        // The exit threshold sums `bound` with the per-position remainder; the same loose clamp as `within_8x64_`.
+        __m512i const bound_vec = _mm512_set1_epi64((long long)sz_min_of_two(bound_, (u64_t)1 << 62));
+        // VP = the low `query_length` bits set (a shift count of 64 yields 0, so `(1 << 64) - 1` == ~0).
+        __m512i vertical_positive = _mm512_sub_epi64(_mm512_sllv_epi64(one, length_vec), one);
+        __m512i vertical_negative = _mm512_setzero_si512();
+        __m512i score = length_vec;
+        __mmask8 dead = 0; // ? Lanes proven hopeless, frozen out of the scan.
+
+        for (size_t position = 0; position != max_candidate_length; ++position) {
+            __mmask8 const live = _mm512_cmpgt_epi64_mask(longer_vec, _mm512_set1_epi64((long long)position));
+            __mmask8 const active = (__mmask8)(live & ~dead);
+            __m512i const symbols = _mm512_cvtepu8_epi64(
+                _mm_loadl_epi64((__m128i const *)(transposed_text + position * lanes_k)));
+            __m512i const equality = _mm512_i64gather_epi64(_mm512_add_epi64(lane_offsets, symbols), match_masks, 8);
+            __m512i const carry_in = _mm512_or_si512(equality, vertical_negative);
+            // Xh = (((Eq & VP) + VP) ^ VP) | Eq; the trailing `(sum ^ VP) | Eq` folds into one VPTERNLOGQ (0xBE).
+            __m512i const sum = _mm512_add_epi64(_mm512_and_si512(equality, vertical_positive), vertical_positive);
+            __m512i const diagonal = _mm512_ternarylogic_epi64(sum, vertical_positive, equality,
+                                                               myers_t::ternlog_xor_or_k);
+            // Ph = Mv | ~(Xh | VP) is `A | ~(B | C)` → VPTERNLOGQ(0xF1).
+            __m512i horizontal_positive = _mm512_ternarylogic_epi64(vertical_negative, diagonal, vertical_positive,
+                                                                    myers_t::ternlog_or_nor_k);
+            __m512i horizontal_negative = _mm512_and_si512(vertical_positive, diagonal);
+            score = _mm512_mask_add_epi64(score, active & _mm512_test_epi64_mask(horizontal_positive, top_mask), score,
+                                          one);
+            score = _mm512_mask_sub_epi64(score, active & _mm512_test_epi64_mask(horizontal_negative, top_mask), score,
+                                          one);
+            horizontal_positive = _mm512_or_si512(_mm512_slli_epi64(horizontal_positive, 1), one);
+            horizontal_negative = _mm512_slli_epi64(horizontal_negative, 1);
+            // Pv' = Mh | ~(Xv | Ph), the same `A | ~(B | C)` shape → VPTERNLOGQ(0xF1).
+            __m512i const next_positive = _mm512_ternarylogic_epi64(horizontal_negative, carry_in, horizontal_positive,
+                                                                    myers_t::ternlog_or_nor_k);
+            __m512i const next_negative = _mm512_and_si512(horizontal_positive, carry_in);
+            vertical_positive = _mm512_mask_blend_epi64(active, vertical_positive, next_positive);
+            vertical_negative = _mm512_mask_blend_epi64(active, vertical_negative, next_negative);
+            // Same prefix early exit as `within_8x64_`: `score - remaining > bound` can never come back.
+            __m512i const remaining = _mm512_sub_epi64(longer_vec, _mm512_set1_epi64((long long)(position + 1)));
+            dead = (__mmask8)(dead | (active & _mm512_cmpgt_epi64_mask(score, _mm512_add_epi64(bound_vec, remaining))));
+            if ((__mmask8)(live & ~dead) == 0) break; // ? Every lane finished or froze.
+        }
+
+        alignas(64) u64_t final_scores[lanes_k];
+        _mm512_store_si512(final_scores, score);
+        for (index_t lane_index = 0; lane_index != candidates.size(); ++lane_index)
+            results[lane_index] = (size_t)((dead & (__mmask8)(1 << lane_index)) == 0 &&
+                                           final_scores[lane_index] <= bound_);
+        return status_t::success_k;
+    }
+};
+
+#pragma endregion Inter Sequence Byte Within
+
 /**
  *  @brief AVX-512 Myers/Hyyr\xC3\xB6 unit-cost @b rune (UTF-32) Levenshtein for Ice Lake, scoring eight independent
  *      pairs at once with one Myers integer per ZMM lane - the rune twin of the byte `levenshtein_distance_myers`.
@@ -3108,6 +3366,259 @@ struct levenshtein_distances<linear_gap_costs_t, allocator_type_, capability_,
                                                            cross_similarities_t::symmetric_k, score_scratch_,
                                                            std::forward<executor_type_>(executor), specs);
         }
+        return score_parallel_(sequences, sequences, results, cross_similarities_t::symmetric_k,
+                               std::forward<executor_type_>(executor), specs);
+    }
+
+#pragma endregion Public Cross Product Overloads
+};
+
+/**
+ *  @brief Batched byte-level @b bounded Levenshtein membership on Ice Lake - "is the unit-cost edit distance at
+ *      most `bound_`?" - answering one boolean per cross-product cell.
+ *
+ *  The membership twin of the linear byte `levenshtein_distances` engine above, with the same query-major
+ *  grouping: cells with a shorter side up to 64 group into eight-lane `within_8x64_shared_query_` launches
+ *  (one `match_masks` build per query) or per-lane `within_8x64_` launches when the query exceeds the word,
+ *  cells past 64 score individually through the serial `levenshtein_distance_within` walker (its NFA and
+ *  bounded-Myers tiers early-exit on their own), and the cheapest rejects - a length difference past the
+ *  bound, or an empty shorter side - never reach a scan at all.
+ */
+template <typename allocator_type_, sz_capability_t capability_>
+struct levenshtein_distances_within<allocator_type_, capability_,
+                                    std::enable_if_t<(capability_ & sz_cap_icelake_k) != 0>> {
+
+    using char_t = char;
+    using allocator_t = allocator_type_;
+    using index_t = u32_t;
+
+    static constexpr sz_capability_t capability_k = capability_;
+    using scoring_t = levenshtein_distance_within<char, sz_cap_serial_k>; // ? Per-pair walker past 64 bytes.
+    using myers_t = levenshtein_distance_within<char, capability_k>;      // ? AVX-512 eight-lane bounded Myers.
+    using scratch_allocator_t = typename std::allocator_traits<allocator_t>::template rebind_alloc<std::byte>;
+
+    /** @brief The membership bound - the maximum edit distance that still counts as a match. */
+    size_t bound_ = 0;
+    allocator_t alloc_ {};
+
+    safe_vector<std::byte, scratch_allocator_t> score_scratch_ {alloc_};
+
+    levenshtein_distances_within(allocator_t alloc = {}) noexcept : alloc_(alloc) {}
+    explicit levenshtein_distances_within(size_t bound, allocator_t alloc = allocator_t {}) noexcept
+        : bound_(bound), alloc_(alloc) {}
+
+    /**
+     *  @brief Worst-case scratch for a single cell over the whole input, in O(Q+C): the bounded-Myers `match_masks`
+     *      + transposed-text buffer for the longest string, or the serial within walker's tables for the longest
+     *      query × longest candidate (the > 64 fallback).
+     */
+    template <typename queries_type_, typename candidates_type_>
+    size_t worst_cell_scratch_(queries_type_ const &queries, candidates_type_ const &candidates,
+                               cpu_specs_t const &specs) const noexcept {
+        size_t longest_query = 0, longest_query_index = 0, longest_candidate = 0, longest_candidate_index = 0;
+        for (size_t index = 0; index < queries.size(); ++index)
+            if (to_view(queries[index]).size() > longest_query)
+                longest_query = to_view(queries[index]).size(), longest_query_index = index;
+        for (size_t index = 0; index < candidates.size(); ++index)
+            if (to_view(candidates[index]).size() > longest_candidate)
+                longest_candidate = to_view(candidates[index]).size(), longest_candidate_index = index;
+        size_t const max_longer = sz_max_of_two(longest_query, longest_candidate);
+        size_t const myers_scratch = myers_t::match_masks_bytes_k + max_longer * (size_t)myers_t::lanes_k;
+        size_t serial_scratch = 0;
+        if (queries.size() && candidates.size())
+            serial_scratch = scoring_t {bound_}.scratch_space_needed(
+                to_view(queries[longest_query_index]), to_view(candidates[longest_candidate_index]), specs);
+        return sz_max_of_two(myers_scratch, serial_scratch);
+    }
+
+#pragma region Cross Product Scoring
+
+    /**
+     *  @brief Answers membership for the live cells `[cell_begin, cell_end)` of the cross-product with the
+     *      eight-lane bounded Myers, falling back to the serial within walker for a shorter side past 64. Each
+     *      cell writes a boolean into the strided @p results matrix (plus the mirror slot for symmetric
+     *      self-similarity).
+     */
+    template <typename queries_type_, typename candidates_type_, typename results_type_>
+    SZ_NOINLINE status_t score_range_(queries_type_ const &queries, candidates_type_ const &candidates,
+                                      results_type_ &&results, cross_similarities_t cross_kind, size_t cell_begin,
+                                      size_t cell_end, scratch_space_t scratch, cpu_specs_t const &specs) noexcept {
+
+        using value_t = remove_cvref<decltype(results.data[0])>;
+        size_t const candidates_count = candidates.size();
+
+        // `scratch` is provided by the caller, already sized to the worst single cell (`worst_cell_scratch_`).
+        scoring_t within {bound_};
+
+        // Maps a query row and candidate column to their primary (and mirrored) destination slots.
+        auto const destination_for = [&](size_t query_index, size_t candidate_index) noexcept {
+            cross_cell_destination_t<value_t> destination;
+            destination.primary = results.data + query_index * results.row_stride + candidate_index;
+            if (cross_kind == cross_similarities_t::symmetric_k && candidate_index != query_index)
+                destination.mirror = results.data + candidate_index * results.row_stride + query_index;
+            return destination;
+        };
+
+        myers_t myers {bound_};
+        cross_cell_writer_t<value_t> writer;
+        dummy_executor_t dummy;
+        for (size_t cell_index = cell_begin; cell_index != cell_end;) {
+            size_t query_index = 0, candidate_index = 0;
+            cross_cell_to_indices_(cell_index, candidates_count, cross_kind, query_index, candidate_index);
+            auto const query = to_view(queries[query_index]);
+            auto const candidate = to_view(candidates[candidate_index]);
+            size_t const shorter = sz_min_of_two(query.size(), candidate.size());
+            size_t const longer = sz_max_of_two(query.size(), candidate.size());
+
+            // The length difference is a lower bound on the distance - the cheapest possible reject.
+            if (longer - shorter > bound_) {
+                cross_cell_destination_t<value_t> const destination = destination_for(query_index, candidate_index);
+                cross_cell_writer_t<value_t> {&destination}[0] = 0;
+                ++cell_index;
+                continue;
+            }
+            if (shorter == 0) {
+                cross_cell_destination_t<value_t> const destination = destination_for(query_index, candidate_index);
+                // Only reachable with `longer <= bound` past the prefilter, but spell the check out anyway.
+                cross_cell_writer_t<value_t> {&destination}[0] = longer <= bound_ ? 1 : 0;
+                ++cell_index;
+                continue;
+            }
+
+            // Bounded single-word Myers: query-major group, seeding with this cell and extending over consecutive
+            // live cells that share the seed query, pass the length prefilter, and fit one 64-bit Myers word, so the
+            // build-once `within_8x64_shared_query_` kernel can pay the `match_masks` build once per query. Per-lane
+            // `top_bits` handle the differing exact lengths inside the group.
+            if (shorter <= 64) {
+                span<char const> group_shorters[myers_t::lanes_k], group_longers[myers_t::lanes_k];
+                span<char const> candidate_views[myers_t::lanes_k]; // ? Candidate view, for the shared-query kernel.
+                size_t group_positions[myers_t::lanes_k];
+                cross_cell_destination_t<value_t> group_destinations[myers_t::lanes_k];
+                size_t const seed_query_index = query_index;
+                bool const seed_query_shorter = query.size() <= candidate.size();
+                group_shorters[0] = seed_query_shorter ? query : candidate;
+                group_longers[0] = seed_query_shorter ? candidate : query;
+                candidate_views[0] = candidate;
+                group_positions[0] = 0;
+                group_destinations[0] = destination_for(query_index, candidate_index);
+                index_t group = 1;
+                ++cell_index;
+                for (; cell_index != cell_end && group != (index_t)myers_t::lanes_k; ++cell_index, ++group) {
+                    size_t next_query_index = 0, next_candidate_index = 0;
+                    cross_cell_to_indices_(cell_index, candidates_count, cross_kind, next_query_index,
+                                           next_candidate_index);
+                    if (next_query_index != seed_query_index) break;
+                    auto const next_query = to_view(queries[next_query_index]);
+                    auto const next_candidate = to_view(candidates[next_candidate_index]);
+                    size_t const next_shorter = sz_min_of_two(next_query.size(), next_candidate.size());
+                    size_t const next_longer = sz_max_of_two(next_query.size(), next_candidate.size());
+                    if (next_shorter == 0 || next_shorter > 64 || next_longer - next_shorter > bound_) break;
+                    bool const next_query_shorter = next_query.size() <= next_candidate.size();
+                    group_shorters[group] = next_query_shorter ? next_query : next_candidate;
+                    group_longers[group] = next_query_shorter ? next_candidate : next_query;
+                    candidate_views[group] = next_candidate;
+                    group_positions[group] = group;
+                    group_destinations[group] = destination_for(next_query_index, next_candidate_index);
+                }
+
+                writer.destinations = group_destinations;
+                // When the shared query fits a single 64-bit Myers word, build its `match_masks` once via the
+                // shared-query kernel; otherwise (the query is the longer side and exceeds 64 while a candidate is
+                // short) the per-lane build covers it.
+                auto const query_view = to_view(queries[seed_query_index]);
+                status_t const status = query_view.size() <= 64
+                                            ? myers.within_8x64_shared_query_(
+                                                  query_view, span<span<char const> const> {candidate_views, group},
+                                                  writer, scratch)
+                                            : myers.within_8x64_(lane_pairs_view<char> {{group_shorters, group},
+                                                                                        {group_longers, group},
+                                                                                        {group_positions, group}},
+                                                                 writer, scratch);
+                if (status != status_t::success_k) return status;
+                continue;
+            }
+
+            // A shorter side past 64 scores through the serial within walker, whose NFA and bounded-Myers
+            // tiers cover any length and early-exit on their own.
+            u8_t result_score = 0;
+            if (status_t const status = within(query, candidate, result_score, scratch, dummy, specs);
+                status != status_t::success_k)
+                return status;
+            cross_cell_destination_t<value_t> const destination = destination_for(query_index, candidate_index);
+            cross_cell_writer_t<value_t> {&destination}[0] = result_score;
+            ++cell_index;
+        }
+        return status_t::success_k;
+    }
+
+    /** @brief Answers membership for the cross-product in parallel: uneven per-cell costs ride the work-stealing
+     *      scheduler. */
+    template <typename queries_type_, typename candidates_type_, typename results_type_, typename executor_type_>
+    SZ_NOINLINE status_t score_parallel_(queries_type_ const &queries, candidates_type_ const &candidates,
+                                         results_type_ &&results, cross_similarities_t cross_kind,
+                                         executor_type_ &&executor, cpu_specs_t const &specs) noexcept {
+        size_t const cells_count = cross_live_cells_count_(queries.size(), candidates.size(), cross_kind);
+        // One hoisted buffer carved into per-thread slices: `prong.thread` indexes a disjoint partition, so the
+        // work-stealing scheduler never aliases scratch and no per-cell allocation happens.
+        size_t const worker_scratch = worst_cell_scratch_(queries, candidates, specs);
+        size_t const workers = sz_max_of_two(executor.threads_count(), (size_t)1);
+        if (status_t status = score_scratch_.try_resize(worker_scratch * workers); status != status_t::success_k)
+            return status;
+        using prong_t = typename remove_cvref<executor_type_>::prong_t;
+        // One cell per prong fills one lane of a lockstep launch and idles the rest.
+        schedule_batches_t const schedule_batches = schedule_batches_(cells_count, workers,
+                                                                      lockstep_lanes_of_<myers_t>::value);
+        atomic_status_t status;
+        executor.for_n_dynamic(schedule_batches.batches_count, [&](prong_t prong) noexcept {
+            if (status != status_t::success_k) return;
+            scratch_space_t slice =
+                scratch_space_t(score_scratch_).subspan(prong.thread * worker_scratch, worker_scratch);
+            status = score_range_(queries, candidates, results, cross_kind, schedule_batches.batch_begin(prong.task),
+                                  schedule_batches.batch_end(prong.task, cells_count), slice, specs);
+        });
+        return status;
+    }
+
+#pragma endregion Cross Product Scoring
+
+#pragma region Public Cross Product Overloads
+
+    template <typename queries_type_, typename candidates_type_, typename value_type_>
+    SZ_NOIPA status_t operator()(queries_type_ const &queries, candidates_type_ const &candidates,
+                                 strided_rows<value_type_> results, cpu_specs_t const &specs = {}) noexcept {
+        if (status_t status = score_scratch_.try_resize(worst_cell_scratch_(queries, candidates, specs));
+            status != status_t::success_k)
+            return status;
+        return score_range_(
+            queries, candidates, results, cross_similarities_t::all_pairs_k, 0,
+            cross_live_cells_count_(queries.size(), candidates.size(), cross_similarities_t::all_pairs_k),
+            scratch_space_t(score_scratch_), specs);
+    }
+
+    template <typename queries_type_, typename candidates_type_, typename value_type_, typename executor_type_>
+    SZ_NOIPA status_t operator()(queries_type_ const &queries, candidates_type_ const &candidates,
+                                 strided_rows<value_type_> results, executor_type_ &&executor,
+                                 cpu_specs_t const &specs = {}) noexcept {
+        return score_parallel_(queries, candidates, results, cross_similarities_t::all_pairs_k,
+                               std::forward<executor_type_>(executor), specs);
+    }
+
+    /** @brief Symmetric self-similarity: one set tested against itself (lower triangle + mirror). */
+    template <typename sequences_type_, typename value_type_>
+    SZ_NOIPA status_t operator()(sequences_type_ const &sequences, strided_rows<value_type_> results,
+                                 cpu_specs_t const &specs = {}) noexcept {
+        if (status_t status = score_scratch_.try_resize(worst_cell_scratch_(sequences, sequences, specs));
+            status != status_t::success_k)
+            return status;
+        return score_range_(
+            sequences, sequences, results, cross_similarities_t::symmetric_k, 0,
+            cross_live_cells_count_(sequences.size(), sequences.size(), cross_similarities_t::symmetric_k),
+            scratch_space_t(score_scratch_), specs);
+    }
+
+    template <typename sequences_type_, typename value_type_, typename executor_type_>
+    SZ_NOIPA status_t operator()(sequences_type_ const &sequences, strided_rows<value_type_> results,
+                                 executor_type_ &&executor, cpu_specs_t const &specs = {}) noexcept {
         return score_parallel_(sequences, sequences, results, cross_similarities_t::symmetric_k,
                                std::forward<executor_type_>(executor), specs);
     }

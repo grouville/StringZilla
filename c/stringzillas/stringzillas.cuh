@@ -406,10 +406,14 @@ struct levenshtein_backends_t {
 struct levenshtein_within_backends_t {
 
     /**
-     *  The bounded Levenshtein membership engine has a serial backend, plus the AVX2 Haswell one when compiled
-     *  in; further SIMD specializations drop in as variant alternatives, like the distance engines.
+     *  The bounded Levenshtein membership engine has a serial backend, plus the AVX-512 Ice Lake and AVX2 Haswell
+     *  ones when compiled in; further SIMD specializations drop in as variant alternatives, like the distance
+     *  engines.
      */
     std::variant<
+#if SZ_USE_ICELAKE
+        szs::levenshtein_within_icelake_t,
+#endif
 #if SZ_USE_HASWELL
         szs::levenshtein_within_haswell_t,
 #endif

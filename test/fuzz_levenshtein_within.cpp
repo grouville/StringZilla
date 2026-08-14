@@ -5,14 +5,19 @@
  *
  *  Validates `szs::levenshtein_distance_within` against two independent oracles:
  *  a plain Wagner-Fischer reference DP and the existing bit-parallel Myers walker.
- *  The `batch` mode differential-tests the Haswell cross-product engine against the
- *  serial batch engine (cross + symmetric, sequential + parallel). Not part of the
- *  CMake build - compile directly:
+ *  The `batch` mode differential-tests the SIMD cross-product engines (Haswell, and
+ *  Ice Lake when compiled in) against the serial batch engine (cross + symmetric,
+ *  sequential + parallel). Not part of the CMake build - compile directly:
  *
- *      g++ -std=c++20 -O2 -Iinclude -Iforkunion/include test/fuzz_levenshtein_within.cpp -lpthread -o fuzz_within
+ *      g++ -std=c++20 -O2 -Iinclude -Iforkunion/include test/fuzz_levenshtein_within.cpp forkunion/c/forkunion.cpp -lpthread -o fuzz_within
  *      ./fuzz_within [iterations] [exhaustive]
- *      g++ -std=c++20 -O2 -march=haswell -Iinclude -Iforkunion/include test/fuzz_levenshtein_within.cpp -lpthread -o fuzz_within
+ *      g++ -std=c++20 -O2 -march=haswell -Iinclude -Iforkunion/include test/fuzz_levenshtein_within.cpp forkunion/c/forkunion.cpp -lpthread -o fuzz_within
  *      ./fuzz_within [iterations] batch [long]
+ *
+ *  The Ice Lake arm needs AVX-512; on hosts without it, run under Intel SDE:
+ *
+ *      g++ -std=c++20 -O2 -march=icelake-server -Iinclude -Iforkunion/include test/fuzz_levenshtein_within.cpp forkunion/c/forkunion.cpp -lpthread -o fuzz_within_icl
+ *      sde64 -icl -- ./fuzz_within_icl [iterations] batch [long]
  */
 #include <algorithm>
 #include <cstdio>
@@ -89,8 +94,8 @@ int main(int argc, char **argv) {
     }
 
     if (batch) {
-#if SZ_USE_HASWELL
-        // Differential-test the Haswell batch engine against the serial one: random collections,
+#if SZ_USE_HASWELL || SZ_USE_ICELAKE
+        // Differential-test the SIMD batch engines against the serial one: random collections,
         // cross-product + symmetric, sequential + parallel, bounds from 0 past the string lengths.
         szs::forkunion_executor_t pool;
         if (pool.try_spawn(4) != szs::status_t::success_k) {
@@ -102,7 +107,7 @@ int main(int argc, char **argv) {
         for (size_t iteration = 0; iteration != iterations; ++iteration) {
             // Small alphabets are the adversarial case: dense matches exercise the early exits.
             size_t const alphabet_size = 1 + rng() % 4;
-            // Short words fill the four-lane tiles; the `long` config forces the > 64 serial fallback.
+            // Short words fill the lockstep tiles; the `long` config forces the > 64 serial fallback.
             size_t const length_cap = batch_long ? 65 + rng() % 636 : (rng() % 10 < 7 ? 45 : 300);
             auto const random_char = [&]() { return (char)('a' + rng() % alphabet_size); };
             auto const random_collection = [&](size_t count) {
@@ -137,7 +142,6 @@ int main(int argc, char **argv) {
             size_t const bounds[] = {0, 1, 2, 3, 4, 5, 9, 63, length_cap + 1, length_cap * 2 + 2};
             for (size_t bound : bounds) {
                 szs::levenshtein_within_serial_t serial_engine {bound};
-                szs::levenshtein_within_haswell_t haswell_engine {bound};
 
                 auto const check_matrices = [&](std::vector<sz_u8_t> &expected, std::vector<sz_u8_t> &got,
                                                 size_t const matrix_rows, size_t const matrix_cols,
@@ -157,46 +161,69 @@ int main(int argc, char **argv) {
                     return true;
                 };
 
-                std::vector<sz_u8_t> expected(rows * cols), got(rows * cols);
-                szs::strided_rows<sz_u8_t> const expected_rows {expected.data(), rows, cols, cols};
-                szs::strided_rows<sz_u8_t> const got_rows {got.data(), rows, cols, cols};
+                // Runs all four driver modes of one accelerated engine against the serial oracle.
+                auto const differential = [&](auto &accelerated_engine, char const *engine_label) -> bool {
+                    std::vector<sz_u8_t> expected(rows * cols), got(rows * cols);
+                    szs::strided_rows<sz_u8_t> const expected_rows {expected.data(), rows, cols, cols};
+                    szs::strided_rows<sz_u8_t> const got_rows {got.data(), rows, cols, cols};
 
-                // Cross-product, sequential then parallel.
-                if (serial_engine(queries, candidates, expected_rows) != szs::status_t::success_k ||
-                    haswell_engine(queries, candidates, got_rows) != szs::status_t::success_k ||
-                    !check_matrices(expected, got, rows, cols, "cross"))
-                    return 1;
-                if (serial_engine(queries, candidates, expected_rows, pool) != szs::status_t::success_k ||
-                    haswell_engine(queries, candidates, got_rows, pool) != szs::status_t::success_k ||
-                    !check_matrices(expected, got, rows, cols, "cross-parallel"))
-                    return 1;
+                    // Cross-product, sequential then parallel.
+                    if (serial_engine(queries, candidates, expected_rows) != szs::status_t::success_k ||
+                        accelerated_engine(queries, candidates, got_rows) != szs::status_t::success_k)
+                        return false;
+                    if (!check_matrices(expected, got, rows, cols,
+                                        engine_label[0] == 'h' ? "haswell cross" : "icelake cross"))
+                        return false;
+                    if (serial_engine(queries, candidates, expected_rows, pool) != szs::status_t::success_k ||
+                        accelerated_engine(queries, candidates, got_rows, pool) != szs::status_t::success_k)
+                        return false;
+                    if (!check_matrices(expected, got, rows, cols,
+                                        engine_label[0] == 'h' ? "haswell cross-parallel" : "icelake cross-parallel"))
+                        return false;
 
-                // Symmetric self-similarity over the queries, sequential then parallel.
-                std::vector<sz_u8_t> expected_sym(rows * rows), got_sym(rows * rows);
-                szs::strided_rows<sz_u8_t> const expected_sym_rows {expected_sym.data(), rows, rows, rows};
-                szs::strided_rows<sz_u8_t> const got_sym_rows {got_sym.data(), rows, rows, rows};
-                auto const check_symmetric = [&](char const *mode_label) -> bool {
-                    for (size_t cell = 0; cell != rows * rows; ++cell) {
-                        ++checks, accepted += got_sym[cell] == 1;
-                        if (got_sym[cell] > 1 || expected_sym[cell] != got_sym[cell]) {
-                            size_t const row = cell / rows, col = cell % rows;
-                            std::fprintf(
-                                stderr, "batch mismatch (%s), iteration %zu, bound %zu, cell (%zu, %zu): %d != %d\n",
-                                mode_label, iteration, bound, row, col, (int)expected_sym[cell], (int)got_sym[cell]);
-                            std::fprintf(stderr, "  first  (%zu): %s\n  second (%zu): %s\n", queries[row].size(),
-                                         queries[row].c_str(), queries[col].size(), queries[col].c_str());
-                            return false;
+                    // Symmetric self-similarity over the queries, sequential then parallel.
+                    std::vector<sz_u8_t> expected_sym(rows * rows), got_sym(rows * rows);
+                    szs::strided_rows<sz_u8_t> const expected_sym_rows {expected_sym.data(), rows, rows, rows};
+                    szs::strided_rows<sz_u8_t> const got_sym_rows {got_sym.data(), rows, rows, rows};
+                    auto const check_symmetric = [&](char const *mode_label) -> bool {
+                        for (size_t cell = 0; cell != rows * rows; ++cell) {
+                            ++checks, accepted += got_sym[cell] == 1;
+                            if (got_sym[cell] > 1 || expected_sym[cell] != got_sym[cell]) {
+                                size_t const row = cell / rows, col = cell % rows;
+                                std::fprintf(
+                                    stderr,
+                                    "batch mismatch (%s), iteration %zu, bound %zu, cell (%zu, %zu): " "%d != %d\n",
+                                    mode_label, iteration, bound, row, col, (int)expected_sym[cell],
+                                    (int)got_sym[cell]);
+                                std::fprintf(stderr, "  first  (%zu): %s\n  second (%zu): %s\n", queries[row].size(),
+                                             queries[row].c_str(), queries[col].size(), queries[col].c_str());
+                                return false;
+                            }
                         }
-                    }
+                        return true;
+                    };
+                    if (serial_engine(queries, expected_sym_rows) != szs::status_t::success_k ||
+                        accelerated_engine(queries, got_sym_rows) != szs::status_t::success_k)
+                        return false;
+                    if (!check_symmetric(engine_label[0] == 'h' ? "haswell symmetric" : "icelake symmetric"))
+                        return false;
+                    if (serial_engine(queries, expected_sym_rows, pool) != szs::status_t::success_k ||
+                        accelerated_engine(queries, got_sym_rows, pool) != szs::status_t::success_k)
+                        return false;
+                    if (!check_symmetric(engine_label[0] == 'h' ? "haswell symmetric-parallel"
+                                                                : "icelake symmetric-parallel"))
+                        return false;
                     return true;
                 };
-                if (serial_engine(queries, expected_sym_rows) != szs::status_t::success_k ||
-                    haswell_engine(queries, got_sym_rows) != szs::status_t::success_k || !check_symmetric("symmetric"))
-                    return 1;
-                if (serial_engine(queries, expected_sym_rows, pool) != szs::status_t::success_k ||
-                    haswell_engine(queries, got_sym_rows, pool) != szs::status_t::success_k ||
-                    !check_symmetric("symmetric-parallel"))
-                    return 1;
+
+#if SZ_USE_HASWELL
+                szs::levenshtein_within_haswell_t haswell_engine {bound};
+                if (!differential(haswell_engine, "haswell")) return 1;
+#endif
+#if SZ_USE_ICELAKE
+                szs::levenshtein_within_icelake_t icelake_engine {bound};
+                if (!differential(icelake_engine, "icelake")) return 1;
+#endif
             }
         }
 
@@ -204,7 +231,8 @@ int main(int argc, char **argv) {
                     100.0 * accepted / checks, iterations, batch_long ? " [long strings]" : "");
         return 0;
 #else
-        std::fprintf(stderr, "batch mode needs the Haswell backend - recompile with -march=haswell\n");
+        std::fprintf(stderr,
+                     "batch mode needs a SIMD backend - recompile with -march=haswell or -march=icelake-server\n");
         return 1;
 #endif
     }
