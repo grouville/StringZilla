@@ -1,6 +1,8 @@
 #include <stringzillas/levenshtein_index.hpp>
 
+#include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <fstream>
 #include <iostream>
 #include <string>
@@ -21,12 +23,42 @@ static std::vector<std::string> load_lines(char const *path, std::size_t limit =
     return lines;
 }
 
+static bool dump_matches(szs::levenshtein_index<> const &index, std::vector<std::string> const &queries,
+                         std::uint8_t bound, std::string const &path) {
+    std::ofstream output(path, std::ios::binary);
+    if (!output) return false;
+    char const magic[8] = {'S', 'Z', 'L', 'E', 'V', '0', '0', '1'};
+    std::uint64_t const dictionary_size = index.size();
+    std::uint64_t const queries_size = queries.size();
+    output.write(magic, sizeof(magic));
+    output.write(reinterpret_cast<char const *>(&dictionary_size), sizeof(dictionary_size));
+    output.write(reinterpret_cast<char const *>(&queries_size), sizeof(queries_size));
+    output.write(reinterpret_cast<char const *>(&bound), sizeof(bound));
+
+    szs::levenshtein_index<>::scratch_t scratch;
+    szs::levenshtein_index<>::matches_t matches;
+    for (auto const &query : queries) {
+        if (index.find({query.data(), query.size()}, bound, scratch, matches) != sz::status_t::success_k) return false;
+        std::sort(matches.begin(), matches.end(), [](auto const &a, auto const &b) {
+            return a.id != b.id ? a.id < b.id : a.distance < b.distance;
+        });
+        std::uint64_t const matches_size = matches.size();
+        output.write(reinterpret_cast<char const *>(&matches_size), sizeof(matches_size));
+        for (auto const &match : matches) {
+            output.write(reinterpret_cast<char const *>(&match.id), sizeof(match.id));
+            output.write(reinterpret_cast<char const *>(&match.distance), sizeof(match.distance));
+        }
+    }
+    return output.good();
+}
+
 int main(int argc, char **argv) {
-    if (argc < 3 || argc > 4) {
-        std::cerr << "usage: levenshtein_index DICTIONARY QUERIES [QUERY_LIMIT]\n";
+    if (argc < 3 || argc > 5) {
+        std::cerr << "usage: levenshtein_index DICTIONARY QUERIES [QUERY_LIMIT] [DUMP_PREFIX]\n";
         return 2;
     }
-    std::size_t const query_limit = argc == 4 ? std::stoull(argv[3]) : 0;
+    std::size_t const query_limit = argc >= 4 ? std::stoull(argv[3]) : 0;
+    std::string const dump_prefix = argc == 5 ? argv[4] : "";
     auto const dictionary = load_lines(argv[1]);
     auto const queries = load_lines(argv[2], query_limit);
     std::cout << "dictionary=" << dictionary.size() << " queries=" << queries.size() << '\n';
@@ -48,7 +80,7 @@ int main(int argc, char **argv) {
         szs::levenshtein_index<>::scratch_t scratch;
         szs::levenshtein_index<>::matches_t matches;
         std::uint8_t const first_bound = max_distance <= 2 ? max_distance : 3;
-        for (std::uint8_t bound = first_bound; bound <= max_distance; ++bound)
+        for (std::uint8_t bound = first_bound; bound <= max_distance; ++bound) {
             for (int repeat = 0; repeat != 3; ++repeat) {
                 std::size_t matches_count = 0;
                 auto const start = std::chrono::steady_clock::now();
@@ -63,5 +95,13 @@ int main(int argc, char **argv) {
                 std::cout << "k=" << unsigned(bound) << " query=" << elapsed << "s matches=" << matches_count
                           << " output_element_bytes=" << sizeof(szs::levenshtein_index_match_t) << '\n';
             }
+            if (!dump_prefix.empty()) {
+                std::string const path = dump_prefix + ".k" + std::to_string(bound) + ".bin";
+                if (!dump_matches(index, queries, bound, path)) {
+                    std::cerr << "dump failed: " << path << '\n';
+                    return 5;
+                }
+            }
+        }
     }
 }
