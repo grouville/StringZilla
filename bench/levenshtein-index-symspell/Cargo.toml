@@ -1,0 +1,13 @@
+[package]
+name = "stringzilla-levenshtein-index-symspell-bench"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+symspell_rs = { git = "https://github.com/wolfgarbe/symspell_rs.git", rev = "df6b21abbb3500b99e9e75857a616ff60f30f50f" }
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
