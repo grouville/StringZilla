@@ -197,6 +197,20 @@ full-SMT `k=2` scaling narrows the lead below the headline threshold. Five-repea
 C/C++ API already supports this one-search-handle-per-reader model; a convenient batch/pool wrapper for C and Python
 remains release work.
 
+Cache-stress runs touch 256 MiB (eight times this host's 32 MiB L3) immediately before every timed query pass, outside
+the timer. Matched five-repeat medians on one pinned core were:
+
+| Bound | StringZilla warm | StringZilla evicted | SymSpell warm | SymSpell evicted | Evicted speedup |
+|---:|---:|---:|---:|---:|---:|
+| 1 | 1.934 ms | 4.546 ms | 21.026 ms | 29.215 ms | 6.43x |
+| 2 | 42.052 ms | 43.698 ms | 465.391 ms | 471.992 ms | 10.80x |
+
+The large adaptive directory therefore has a real cold-cache cost at `k=1`: StringZilla slows 2.35x versus 1.39x for
+SymSpell, and its lead falls below 10x. At `k=2`, both penalties are small and the lead remains above 10x. This is an
+explicit boundary on the warm headline, not evidence that the compact 20-bit directory is preferable: that layout's
+earlier warm median was about 3.0 ms. A configurable memory/cache policy and independent-machine cache sweeps are
+still needed before choosing one universal default.
+
 ## StringWars relationship
 
 StringWars' existing similarity categories are valid dense matrix workloads; immutable-dictionary retrieval is a

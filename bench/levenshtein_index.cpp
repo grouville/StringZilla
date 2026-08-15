@@ -60,7 +60,9 @@ template <typename index_type_>
 static int run(std::vector<std::string> const &dictionary, std::vector<std::string> const &queries,
                std::size_t deletion_max_length, std::vector<std::uint8_t> const &max_distances,
                std::string const &dump_prefix, int query_repeats, std::size_t query_threads,
-               std::size_t batches_per_repeat) {
+               std::size_t batches_per_repeat, std::size_t cache_evict_bytes) {
+    std::vector<std::uint8_t> cache_evict_buffer(cache_evict_bytes);
+    std::uint64_t cache_evict_checksum = 0;
     for (std::uint8_t max_distance : max_distances) {
         index_type_ index;
         auto const build_start = std::chrono::steady_clock::now();
@@ -83,6 +85,10 @@ static int run(std::vector<std::string> const &dictionary, std::vector<std::stri
         std::uint8_t const first_bound = max_distance <= 2 ? max_distance : 3;
         for (std::uint8_t bound = first_bound; bound <= max_distance; ++bound) {
             for (int repeat = 0; repeat != query_repeats; ++repeat) {
+                for (std::size_t offset = 0; offset < cache_evict_buffer.size(); offset += 64) {
+                    ++cache_evict_buffer[offset];
+                    cache_evict_checksum += cache_evict_buffer[offset];
+                }
                 auto const start = std::chrono::steady_clock::now();
                 auto const search_slice = [&](std::size_t thread) {
                     std::size_t found = 0;
@@ -119,6 +125,7 @@ static int run(std::vector<std::string> const &dictionary, std::vector<std::stri
                 std::cout << "k=" << unsigned(bound) << " query=" << elapsed / batches_per_repeat
                           << "s matches=" << matches_count / batches_per_repeat << " threads=" << query_threads
                           << " batches=" << batches_per_repeat
+                          << " cache_evict_bytes=" << cache_evict_bytes
                           << " output_element_bytes=" << sizeof(szs::levenshtein_index_match_t) << '\n';
             }
             if (!dump_prefix.empty()) {
@@ -130,6 +137,7 @@ static int run(std::vector<std::string> const &dictionary, std::vector<std::stri
             }
         }
     }
+    if (cache_evict_bytes) std::cerr << "cache_evict_checksum=" << cache_evict_checksum << '\n';
     return 0;
 }
 
@@ -164,6 +172,14 @@ int main(int argc, char **argv) {
     std::size_t const batches_per_repeat = std::getenv("SZ_LEVENSHTEIN_BATCHES_PER_REPEAT")
                                                 ? std::stoull(std::getenv("SZ_LEVENSHTEIN_BATCHES_PER_REPEAT"))
                                                 : 1;
+    std::size_t const cache_evict_mb = std::getenv("SZ_LEVENSHTEIN_CACHE_EVICT_MB")
+                                           ? std::stoull(std::getenv("SZ_LEVENSHTEIN_CACHE_EVICT_MB"))
+                                           : 0;
+    if (cache_evict_mb > std::size_t(-1) / (1024 * 1024)) {
+        std::cerr << "SZ_LEVENSHTEIN_CACHE_EVICT_MB is too large\n";
+        return 2;
+    }
+    std::size_t const cache_evict_bytes = cache_evict_mb * 1024 * 1024;
     if (query_threads == 0 || batches_per_repeat == 0) {
         std::cerr << "SZ_LEVENSHTEIN_THREADS and SZ_LEVENSHTEIN_BATCHES_PER_REPEAT must be positive\n";
         return 2;
@@ -177,7 +193,9 @@ int main(int argc, char **argv) {
         max_distances = {static_cast<std::uint8_t>(parsed)};
     }
     return utf8 ? run<szs::levenshtein_index_utf8<>>(dictionary, queries, deletion_max_length, max_distances,
-                                                     dump_prefix, query_repeats, query_threads, batches_per_repeat)
+                                                     dump_prefix, query_repeats, query_threads, batches_per_repeat,
+                                                     cache_evict_bytes)
                 : run<szs::levenshtein_index<>>(dictionary, queries, deletion_max_length, max_distances,
-                                                dump_prefix, query_repeats, query_threads, batches_per_repeat);
+                                                dump_prefix, query_repeats, query_threads, batches_per_repeat,
+                                                cache_evict_bytes);
 }

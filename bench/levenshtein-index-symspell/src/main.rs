@@ -146,6 +146,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let threads = env::var("SYMSPELL_THREADS").map_or(Ok(1), |value| value.parse::<usize>())?;
     let batches =
         env::var("SYMSPELL_BATCHES_PER_REPEAT").map_or(Ok(1), |value| value.parse::<usize>())?;
+    let cache_evict_mb =
+        env::var("SYMSPELL_CACHE_EVICT_MB").map_or(Ok(0), |value| value.parse::<usize>())?;
+    let cache_evict_bytes = cache_evict_mb
+        .checked_mul(1024 * 1024)
+        .ok_or("SYMSPELL_CACHE_EVICT_MB is too large")?;
     if repeats == 0 || threads == 0 || batches == 0 {
         return Err(
             "SYMSPELL_REPEATS, SYMSPELL_THREADS, and SYMSPELL_BATCHES_PER_REPEAT must be positive"
@@ -185,7 +190,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             build_start.elapsed().as_secs_f64(),
             symspell.get_dictionary_size()
         );
+        let mut cache_evict_buffer = vec![0u8; cache_evict_bytes];
+        let mut cache_evict_checksum = 0u64;
         for repeat in 0..repeats {
+            for value in cache_evict_buffer.iter_mut().step_by(64) {
+                *value = value.wrapping_add(1);
+                cache_evict_checksum = cache_evict_checksum.wrapping_add(*value as u64);
+            }
+            std::hint::black_box(cache_evict_checksum);
             let start = Instant::now();
             let (matches_count, checksum) = if threads == 1 {
                 search_slice(&symspell, &ids, &queries, bound, batches, 0, 1)
@@ -215,10 +227,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 })
             };
             println!(
-                "k={bound} repeat={repeat} query={:.6}s matches={} checksum={:016x} threads={threads} batches={batches}",
+                "k={bound} repeat={repeat} query={:.6}s matches={} checksum={:016x} threads={threads} batches={batches} cache_evict_bytes={}",
                 start.elapsed().as_secs_f64() / batches as f64,
                 matches_count / batches,
                 checksum,
+                cache_evict_buffer.len(),
             );
         }
         if let Some(prefix) = dump_prefix {
