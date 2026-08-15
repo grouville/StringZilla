@@ -83,6 +83,12 @@ class basic_levenshtein_index {
         u8_t min_distance = 0;
         u8_t terminal_distance = 0;
     };
+    struct directory_word_t {
+        u32_t rank = 0;
+        u32_t bits_low = 0;
+        u32_t bits_high = 0;
+    };
+    static_assert(sizeof(directory_word_t) == 12, "Ranked directory words must remain compact");
 
     template <typename value_type_>
     using rebound_allocator_t =
@@ -94,6 +100,7 @@ class basic_levenshtein_index {
     vector_t<symbol_t> tape_ {alloc_};
     vector_t<u64_t> offsets_ {alloc_};
     vector_t<u32_t> directory_ {alloc_};
+    vector_t<directory_word_t> directory_words_ {alloc_};
     vector_t<u32_t> packed_records_ {alloc_};
     vector_t<u64_t> wide_records_ {alloc_};
     vector_t<trie_node_t> trie_nodes_ {alloc_};
@@ -797,23 +804,70 @@ class basic_levenshtein_index {
         if (wide_records_.size()) {
             prefix_bits_ = min_prefix_bits_k;
             // Keep large directories sparse enough that the overwhelmingly common miss or single-record bucket
-            // avoids a multi-step lower_bound. Small indexes retain the 4 MiB minimum directory; large deletion
-            // indexes trade at most 128 MiB for lower steady-state query latency.
+            // avoids a multi-step lower_bound. Empty prefixes are compressed below when their ranked bitmap is
+            // smaller than a dense offset table.
             while (prefix_bits_ != max_prefix_bits_k &&
                    wide_records_.size() > (size_t(1) << (prefix_bits_ - 3)))
                 ++prefix_bits_;
             suffix_bits_ = static_cast<u8_t>(32 - prefix_bits_);
             suffix_mask_ = (u32_t(1) << suffix_bits_) - 1;
             size_t const prefix_buckets = size_t(1) << prefix_bits_;
-            if (directory_.try_resize(prefix_buckets + 1) != status_t::success_k) return status_t::bad_alloc_k;
+
+            size_t nonempty_prefixes = 0;
             size_t cursor = 0;
-            for (size_t prefix = 0; prefix != prefix_buckets; ++prefix) {
-                directory_[prefix] = static_cast<u32_t>(cursor);
-                while (cursor != wide_records_.size() &&
-                       (u32_t(wide_records_[cursor] >> 32) >> suffix_bits_) == prefix)
+            while (cursor != wide_records_.size()) {
+                size_t const prefix = u32_t(wide_records_[cursor] >> 32) >> suffix_bits_;
+                ++nonempty_prefixes;
+                do
                     ++cursor;
+                while (cursor != wide_records_.size() &&
+                       (u32_t(wide_records_[cursor] >> 32) >> suffix_bits_) == prefix);
             }
-            directory_[prefix_buckets] = static_cast<u32_t>(wide_records_.size());
+
+            size_t const directory_words = (prefix_buckets + 63) / 64;
+            size_t const dense_bytes = (prefix_buckets + 1) * sizeof(u32_t);
+            size_t const ranked_bytes = directory_words * sizeof(directory_word_t) +
+                                        (nonempty_prefixes + 1) * sizeof(u32_t);
+            if (ranked_bytes < dense_bytes) {
+                if (directory_words_.try_resize(directory_words) != status_t::success_k ||
+                    directory_.try_resize(nonempty_prefixes + 1) != status_t::success_k)
+                    return status_t::bad_alloc_k;
+                std::fill(directory_words_.begin(), directory_words_.end(), directory_word_t {});
+                cursor = 0;
+                size_t nonempty = 0;
+                while (cursor != wide_records_.size()) {
+                    size_t const prefix = u32_t(wide_records_[cursor] >> 32) >> suffix_bits_;
+                    directory_word_t &word = directory_words_[prefix / 64];
+                    size_t const bit = prefix % 64;
+                    if (bit < 32) word.bits_low |= u32_t(1) << bit;
+                    else word.bits_high |= u32_t(1) << (bit - 32);
+                    directory_[nonempty++] = static_cast<u32_t>(cursor);
+                    do
+                        ++cursor;
+                    while (cursor != wide_records_.size() &&
+                           (u32_t(wide_records_[cursor] >> 32) >> suffix_bits_) == prefix);
+                }
+                directory_[nonempty] = static_cast<u32_t>(wide_records_.size());
+                u32_t rank = 0;
+                for (size_t word = 0; word != directory_words; ++word) {
+                    directory_words_[word].rank = rank;
+                    u64_t const bits = u64_t(directory_words_[word].bits_high) << 32 |
+                                       directory_words_[word].bits_low;
+                    rank += static_cast<u32_t>(sz_u64_popcount(bits));
+                }
+            }
+            else {
+                if (directory_.try_resize(prefix_buckets + 1) != status_t::success_k)
+                    return status_t::bad_alloc_k;
+                cursor = 0;
+                for (size_t prefix = 0; prefix != prefix_buckets; ++prefix) {
+                    directory_[prefix] = static_cast<u32_t>(cursor);
+                    while (cursor != wide_records_.size() &&
+                           (u32_t(wide_records_[cursor] >> 32) >> suffix_bits_) == prefix)
+                        ++cursor;
+                }
+                directory_[prefix_buckets] = static_cast<u32_t>(wide_records_.size());
+            }
         }
 
         if (wide_records_.size() && dictionary.size() <= size_t(1) << packed_id_bits_k) {
@@ -856,8 +910,8 @@ class basic_levenshtein_index {
     using matches_t = vector_t<match_t>;
 
     explicit basic_levenshtein_index(allocator_t alloc = {}) noexcept
-        : alloc_(alloc), tape_(alloc), offsets_(alloc), directory_(alloc), packed_records_(alloc),
-          wide_records_(alloc), trie_nodes_(alloc), trie_edges_(alloc), trie_terminals_(alloc) {}
+        : alloc_(alloc), tape_(alloc), offsets_(alloc), directory_(alloc), directory_words_(alloc),
+          packed_records_(alloc), wide_records_(alloc), trie_nodes_(alloc), trie_edges_(alloc), trie_terminals_(alloc) {}
 
     template <typename sequences_type_>
     status_t try_build(sequences_type_ const &dictionary, u8_t max_distance,
@@ -890,8 +944,22 @@ class basic_levenshtein_index {
 
         for (u32_t hash : scratch.residuals) {
             size_t const prefix = hash >> suffix_bits_;
-            size_t const begin_offset = directory_[prefix];
-            size_t const end_offset = directory_[prefix + 1];
+            size_t begin_offset = 0, end_offset = 0;
+            if (directory_words_.size()) {
+                size_t const word_index = prefix / 64;
+                size_t const bit_index = prefix % 64;
+                directory_word_t const &directory_word = directory_words_[word_index];
+                u64_t const word = u64_t(directory_word.bits_high) << 32 | directory_word.bits_low;
+                u64_t const bit = u64_t(1) << bit_index;
+                if (!(word & bit)) continue;
+                size_t const rank = directory_word.rank + sz_u64_popcount(word & (bit - 1));
+                begin_offset = directory_[rank];
+                end_offset = directory_[rank + 1];
+            }
+            else {
+                begin_offset = directory_[prefix];
+                end_offset = directory_[prefix + 1];
+            }
             if (!packed_records_.size()) {
                 u64_t const key = u64_t(hash) << 32;
                 u64_t const *record = std::lower_bound(wide_records_.begin() + begin_offset,
@@ -940,8 +1008,8 @@ class basic_levenshtein_index {
         return packed_records_.size() ? packed_records_.size() : wide_records_.size();
     }
     size_t index_bytes() const noexcept {
-        return directory_.size() * sizeof(u32_t) + packed_records_.size() * sizeof(u32_t) +
-               wide_records_.size() * sizeof(u64_t) + trie_bytes();
+        return directory_.size() * sizeof(u32_t) + directory_words_.size() * sizeof(directory_word_t) +
+               packed_records_.size() * sizeof(u32_t) + wide_records_.size() * sizeof(u64_t) + trie_bytes();
     }
     size_t dictionary_bytes() const noexcept {
         return tape_.size() * sizeof(symbol_t) + offsets_.size() * sizeof(u64_t);

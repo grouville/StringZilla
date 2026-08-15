@@ -23,7 +23,7 @@ than replacing it, and its deletion/trie engine indexes decoded UTF-32 codepoint
 bindings, and batch/parallel query submission remain release work.
 
 On the all-ASCII pinned English corpus, where byte and codepoint answers coincide, the UTF-8 facade's median query
-time was 2.064 ms at `k=1` and 57.60 ms at `k=2`, versus 1.921 ms and 41.00 ms for the byte API. The extra validation,
+time was 2.083 ms at `k=1` and 58.245 ms at `k=2`, versus 1.948 ms and 41.555 ms for the byte API. The extra validation,
 transcoding, and wider dictionary tape therefore cost about 7% and 40% respectively; owned dictionary storage grew
 from 6.46 MB to 16.94 MB.
 
@@ -32,8 +32,8 @@ files. This is not a natural-language corpus, but it preserves every expected ed
 two-byte UTF-8/codepoint execution. The transcoded dictionary/query SHA-256 values were
 `17870ef9f2ad2ed56f94cde8d8239c80f0f9bbb5295b6b425d8d8b5e9bbef0de` and
 `e3c344a21bc50cdeb5d9a0cd700d32d2a203a6dbcbf2612c7d6db6613ede3fb3`. Native RapidFuzz
-`CachedLevenshtein<char32_t>` took 24.42 s at `k=1` and 37.65 s at `k=2`; StringZilla took 2.141 ms and 57.68 ms,
-about 11,406x and 653x faster. RapidFuzz decodes the entire corpus before timing, while StringZilla still validates and
+`CachedLevenshtein<char32_t>` took 24.42 s at `k=1` and 37.65 s at `k=2`; StringZilla took 2.124 ms and 57.701 ms,
+about 11,499x and 653x faster. RapidFuzz decodes the entire corpus before timing, while StringZilla still validates and
 decodes each query inside the timed call, favoring RapidFuzz. More importantly, complete per-query `(ID, distance)`
 streams were byte-identical at both bounds and reproduced the topology-preserved hashes above (`10e1ce...38a6` and
 `9fa72b...7bb4`).
@@ -45,15 +45,15 @@ that are already lowercase, avoiding any case-folding contract change. This prod
 10,000 equal-part mixed queries with seed 243, SHA-256
 `8178000a76ac3090c0e6bc4d753506c6edc05316ca249c9a97289488ee4aeabd`.
 
-This corpus is an intentionally difficult dense-output regime. At `k=1`, 2,219,220 matches took a 16.294 ms warmed
-median in StringZilla, 442.972 ms in SymSpell, and 21.523 s in a single RapidFuzz oracle pass: 27.2x and 1,321x leads.
-At `k=2`, 343,237,926 matches took 5.038 s in StringZilla, 144.709 s in the single long SymSpell pass, and 35.917 s
-in RapidFuzz: 28.7x faster than the indexed baseline but only 7.13x faster than the dense scan. The complete
+This corpus is an intentionally difficult dense-output regime. At `k=1`, 2,219,220 matches took a 16.017 ms warmed
+median in StringZilla, 442.972 ms in SymSpell, and 21.523 s in a single RapidFuzz oracle pass: 27.7x and 1,344x leads.
+At `k=2`, 343,237,926 matches took 5.149 s in StringZilla, 144.709 s in the single long SymSpell pass, and 35.917 s
+in RapidFuzz: 28.1x faster than the indexed baseline but only 6.98x faster than the dense scan. The complete
 StringZilla and RapidFuzz streams were byte-identical. Their sizes/hashes were 11,176,125 bytes and
 `1cfa6a220e8af6d298b3e92555b6fcb8adb6abe767c0b94f02e2c032ebd69eed` at `k=1`, and 1,716,269,655 bytes and
 `7db80c5960b3bd78b6e0d0cec86fbf8e6a045284229b110aef84bcb2350a4e53` at `k=2`.
 
-StringZilla built in 0.099/0.176 s and used 72.5/144.1 MB for the index plus 6.9 MB for its owned decoded dictionary;
+StringZilla built in 0.084/0.150 s and used 11.9/20.6 MB for the index plus 6.9 MB for its owned decoded dictionary;
 SymSpell built in 0.212/0.377 s. The output density explains why the low-bound English ratios cannot be projected onto
 all languages or query mixes: at `k=2`, about 34,324 matches are materialized per query. The one-pass competitor times
 must not be presented as confidence intervals, but their margins are large enough to establish the qualitative result.
@@ -62,8 +62,8 @@ Rust `fst` 0.4.7 cannot currently serve as the Unicode baseline despite document
 three-key smoke test where `"é"`, `"Ѐ"`, and `"А"` must produce nine matches at distance one, it returned seven,
 omitting the two substitutions between multibyte scalars sharing the same leading UTF-8 byte. On the transcoded
 corpus it consequently returned only 362/1,064 rather than 9,103/201,190 matches. The checked-in harness now fails its
-Unicode contract smoke test before timing, and those incomparable timings are excluded. A natural multilingual corpus
-and additional same-contract Unicode index remain claim-gate work.
+Unicode contract smoke test before timing, and those incomparable timings are excluded. More natural languages and
+an additional same-contract Unicode index remain claim-gate work.
 
 ## Algorithm regions
 
@@ -107,9 +107,9 @@ capture:
 
 | Compile tier | `k=1` | `k=2` | `k=3` | `k=4` |
 |:---|---:|---:|---:|---:|
-| portable x86-64 | 1.936 ms | 45.615 ms | 5.339 s | 15.920 s |
-| AVX2 / Haswell | 1.961 ms | 42.022 ms | 5.385 s | 15.974 s |
-| native AVX-512 | 1.921 ms | 41.000 ms | 5.461 s | 16.223 s |
+| portable x86-64 | 2.015 ms | 48.678 ms | 5.339 s | 15.920 s |
+| AVX2 / Haswell | 1.920 ms | 42.115 ms | 5.385 s | 15.974 s |
+| native AVX-512 | 1.948 ms | 41.555 ms | 5.461 s | 16.223 s |
 
 This is not an ISA shootout—the hot index is currently portable scalar code and compiler tuning can change its
 layout. It does establish that the result is algorithmic rather than an AVX-512-only effect, and that no AVX-512
@@ -124,8 +124,8 @@ the following one-pass results:
 
 | Bound | StringZilla | Rust `fst` | StringZilla speedup |
 |---:|---:|---:|---:|
-| 1 | 1.921 ms | 0.866 s | 451x |
-| 2 | 41.000 ms | 5.469 s | 133x |
+| 1 | 1.948 ms | 0.866 s | 445x |
+| 2 | 41.555 ms | 5.469 s | 132x |
 | 3 | 5.461 s | 62.284 s | 11.4x |
 | 4 | 16.223 s | 226.019 s | 13.9x |
 
@@ -138,10 +138,10 @@ contract test and currently refuses to benchmark because `fst` 0.4.7 misses vali
 
 Tantivy 0.26.1 was also benchmarked through its public `FuzzyTermQuery` with transpositions disabled and
 `DocSetCollector` materializing every document address. It built its in-memory index in 216.6 ms and peaked at
-98,876 KiB RSS. Median query time was 485.1 ms at `k=1` and 4.183 s at `k=2`, making StringZilla 253x and 102x faster
-on those bounds. Tantivy returns IDs without distances and currently rejects bounds above two. Its lower observed RSS
-is a real advantage; because the StringZilla RSS capture included sequential construction through the larger `k=4`
-index, per-bound isolated RSS measurements are required before making a direct memory claim.
+98,876 KiB RSS. Median query time was 485.1 ms at `k=1` and 4.183 s at `k=2`, making StringZilla 249x and 101x faster
+on those bounds. Tantivy returns IDs without distances and currently rejects bounds above two. StringZilla's final
+isolated ranked-index peak was lower at `k=1` (86,516 KiB) and higher at `k=2` (304,500 KiB); runtime and index-format
+differences still prevent treating process RSS as serialized-size parity.
 
 Lucene 10.3.1 was tested in two distinct modes on OpenJDK 21. Its public `FuzzyQuery` is not the same exact contract:
 at English `k=2` it returned 199,789 rather than 201,190 hits because Lucene additionally requires edit distance to
@@ -151,8 +151,8 @@ transpositions disabled and a complete hit-count collector. It returned the vali
 
 | Corpus | Bound | StringZilla | Lucene exact automaton | StringZilla speedup |
 |:---|---:|---:|---:|---:|
-| English | 1 | 1.921 ms | 1.676 s | 872x |
-| English | 2 | 41.000 ms | 14.965 s | 365x |
+| English | 1 | 1.948 ms | 1.676 s | 860x |
+| English | 2 | 41.555 ms | 14.965 s | 360x |
 | Wikipedia URLs | 1 | 15.9 ms | 7.796 s | 489x |
 | Wikipedia URLs | 2 | 502.6 ms | 45.424 s | 90.4x |
 | four-symbol DNA | 1 | 12.9 ms | 963.8 ms | 74.7x |
@@ -169,10 +169,10 @@ already-lowercase unique input, requests `Verbosity::All`, filters every suggest
 terms back to IDs, and materializes `(ID, distance)` results. This extra filtering is necessary for contract parity;
 complete streams were byte-identical to the RapidFuzz oracle at both bounds.
 
-On one pinned core, ten-repeat medians were 1.921 ms versus 20.931 ms at `k=1` and 41.000 ms versus 455.857 ms at
-`k=2`: StringZilla was 10.90x and 11.12x faster. Isolated build times were 0.267/1.402 s for StringZilla and
-0.366/1.384 s for SymSpell. StringZilla's speed-oriented persistent index plus owned dictionary occupied
-155.8/217.6 MB and process peak was 198,432/379,656 KiB; SymSpell process peak was 317,424/812,100 KiB. Those RSS
+On one pinned core, warmed medians were 1.948 ms versus 20.931 ms at `k=1` and 41.555 ms versus 455.857 ms at
+`k=2`: StringZilla was 10.74x and 10.97x faster. Isolated build times were 0.235/1.324 s for StringZilla and
+0.366/1.384 s for SymSpell. StringZilla's ranked index plus owned dictionary occupied 40.9/140.5 MB and process peak
+was 86,516/304,500 KiB; SymSpell process peak was 317,424/812,100 KiB. Those RSS
 figures include different runtime overheads and are not substitutes for serialized index sizes, but they establish
 that the latency win was not purchased with a larger process footprint. SymSpell performs internal allocation and
 sorting required by its public lookup API while StringZilla reuses caller-owned scratch; both are real API costs and
@@ -184,16 +184,16 @@ complete query batches at `k=1` and five at `k=2`. On the six-core/twelve-thread
 
 | Workers | StringZilla `k=1` | SymSpell `k=1` | Speedup | StringZilla `k=2` | SymSpell `k=2` | Speedup |
 |---:|---:|---:|---:|---:|---:|---:|
-| 1 | 1.985 ms | 21.155 ms | 10.66x | 41.260 ms | 464.799 ms | 11.27x |
-| 2 | 1.043 ms | 11.376 ms | 10.91x | 21.571 ms | 237.256 ms | 11.00x |
-| 3 | 0.811 ms | 7.591 ms | 9.36x | 14.595 ms | 160.753 ms | 11.01x |
-| 6 physical | 0.427 ms | 3.989 ms | 9.34x | 7.752 ms | 81.313 ms | 10.49x |
-| 12 SMT | 0.263 ms | 3.049 ms | 11.59x | 5.907 ms | 55.986 ms | 9.48x |
+| 1 | 1.872 ms | 21.155 ms | 11.30x | 41.359 ms | 464.799 ms | 11.24x |
+| 2 | 1.047 ms | 11.376 ms | 10.86x | 22.100 ms | 237.256 ms | 10.74x |
+| 3 | 0.815 ms | 7.591 ms | 9.32x | 15.002 ms | 160.753 ms | 10.72x |
+| 6 physical | 0.410 ms | 3.989 ms | 9.74x | 8.106 ms | 81.313 ms | 10.03x |
+| 12 SMT | 0.261 ms | 3.049 ms | 11.67x | 5.762 ms | 55.986 ms | 9.72x |
 
-StringZilla scales 7.54x/6.98x from one to twelve workers at `k=1/2`; SymSpell scales 6.94x/8.30x. The result is
+StringZilla scales 7.17x/7.18x from one to twelve workers at `k=1/2`; SymSpell scales 6.94x/8.30x. The result is
 order-of-magnitude class across the curve, but not strictly above 10x in every cell. In particular, SymSpell's better
-full-SMT `k=2` scaling narrows the lead below the headline threshold. Five-repeat reruns placed that final cell between
-9.48x and 9.87x, so it must not be rounded up. All cells retained the validated 9,103/201,190 match totals. The public
+full-SMT `k=2` scaling narrows the lead below the headline threshold. The final five-repeat cell was 9.72x, so it must
+not be rounded up. All cells retained the validated 9,103/201,190 match totals. The public
 C/C++ API already supports this one-search-handle-per-reader model; a convenient batch/pool wrapper for C and Python
 remains release work.
 
@@ -202,14 +202,12 @@ the timer. Matched five-repeat medians on one pinned core were:
 
 | Bound | StringZilla warm | StringZilla evicted | SymSpell warm | SymSpell evicted | Evicted speedup |
 |---:|---:|---:|---:|---:|---:|
-| 1 | 1.934 ms | 4.546 ms | 21.026 ms | 29.215 ms | 6.43x |
-| 2 | 42.052 ms | 43.698 ms | 465.391 ms | 471.992 ms | 10.80x |
+| 1 | 1.948 ms | 4.309 ms | 21.026 ms | 29.215 ms | 6.78x |
+| 2 | 41.555 ms | 45.867 ms | 465.391 ms | 471.992 ms | 10.29x |
 
-The large adaptive directory therefore has a real cold-cache cost at `k=1`: StringZilla slows 2.35x versus 1.39x for
-SymSpell, and its lead falls below 10x. At `k=2`, both penalties are small and the lead remains above 10x. This is an
-explicit boundary on the warm headline, not evidence that the compact 20-bit directory is preferable: that layout's
-earlier warm median was about 3.0 ms. A configurable memory/cache policy and independent-machine cache sweeps are
-still needed before choosing one universal default.
+The ranked directory has a real cold-cache cost at `k=1`: StringZilla slows 2.21x versus 1.39x for SymSpell, and its
+lead falls below 10x. At `k=2`, StringZilla slows 1.10x and the lead remains above 10x. This is an explicit boundary on
+the warm headline. Independent-machine cache sweeps remain necessary.
 
 ## StringWars relationship
 
@@ -230,14 +228,22 @@ was dense `k=4` (65.0 versus 53.8 million comparisons/s); the largest was reject
 million comparisons/s). These dense-engine results neither prove nor weaken the much larger immutable-index gains.
 
 The deletion index stores every residual produced by deleting `0..k` symbols, not exactly `k`: the latter cannot
-join unequal-length strings by a common residual. A 20-to-25-bit adaptive directory supplies the high hash bits.
-Small indexes retain the 4 MiB minimum; large indexes grow until they average at most one record per eight buckets or
-reach the 128 MiB cap. Dictionaries below `2^20` entries use packed 32-bit records (the remaining hash suffix plus a
-20-bit ID); larger dictionaries require a wide record representation rather than truncation. Hash collisions only
-add verifier work and can never change results. On English this speed-oriented policy increased persistent bytes from
-19.3 to 149.3 MB at `k=1` and 81.1 to 211.2 MB at `k=2`, while reducing steady query medians from about 3.0/45.5 ms to
-1.92/41.0 ms. Callers prioritizing memory can force the compact trie today; a direct memory-budget parameter would be
-a useful follow-up.
+join unequal-length strings by a common residual. A 20-to-25-bit adaptive hash prefix keeps the overwhelmingly common
+miss or single-record bucket cheap. Rather than materializing up to 128 MiB of offsets for empty buckets, the final
+directory stores one interleaved 12-byte `(rank, 64-bit occupancy)` record per 64 buckets and an offset only for each
+nonempty bucket. Lookup tests occupancy, computes the local rank with one popcount, and then verifies the exact hash
+suffix and candidate string. It automatically retains the dense offset representation only when that is smaller.
+Dictionaries below `2^20` entries use packed 32-bit records (the remaining hash suffix plus a 20-bit ID); larger
+dictionaries require a wide record representation rather than truncation. Hash collisions only add verifier work and
+can never change results.
+
+On English, replacing the dense 25-bit directory reduced persistent index bytes from 149.3 to 34.4 MB at `k=1` and
+211.2 to 134.0 MB at `k=2`; isolated peak RSS fell from 198,432/379,656 KiB to 86,516/304,500 KiB. Warm medians changed
+from 1.934/42.052 ms to 1.948/41.555 ms, and 256 MiB-evicted medians from 4.546/43.698 ms to 4.309/45.867 ms. Builds
+improved from about 0.267/1.372 s to 0.235/1.324 s. On natural Chinese, index bytes fell from 72.5/144.1 MB to
+11.9/20.6 MB with essentially unchanged `k=1` latency and a roughly 2% `k=2` regression. The exhaustive, English, and
+Unicode stream gates remained exact. This ranked layout therefore dominates the dense directory on the measured
+memory/query/build Pareto surface despite the small evicted `k=2` tradeoff.
 
 The default builder now estimates the complete deletion-neighborhood upper bound before allocating it. At no more
 than 80 residuals per dictionary word it indexes every word; above that it uses the trie for the complete dictionary.
@@ -256,7 +262,7 @@ than the generator label, determines their actual selectivity:
 
 | Dictionary / queries | Shape | Auto plan | `k=1` | `k=2` | Tantivy `k=1/2` |
 |:---|:---|:---|---:|---:|---:|
-| English words / 10,000 | 370,105 words, mean 10.44 bytes | deletion / deletion | 1.92 ms | 41.0 ms | 485 ms / 4.183 s |
+| English words / 10,000 | 370,105 words, mean 10.44 bytes | deletion / deletion | 1.95 ms | 41.6 ms | 485 ms / 4.183 s |
 | Wikipedia URLs / 10,000 | 97,054 strings, mean 47.85 bytes | deletion / trie | 15.9 ms | 502.6 ms | 480 ms / 2.428 s |
 | four-symbol DNA / 1,000 | 100,000 strings, exactly 100 bytes | trie / trie | 12.9 ms | 107.5 ms | 52.7 ms / 282.3 ms |
 
@@ -308,6 +314,7 @@ representative repeated-query immutable-dictionary workloads with byte-for-byte 
 English `k=1/2` runs now also clear 10x against the pinned official SymSpell-Rust implementation under an exact-result
 filter in serial execution, while the full-SMT `k=2` comparison currently lands just below 10x. Tantivy, Lucene,
 FastSS, other compact tries/FSTs, and BK-trees remain useful independent indexed baselines. A broad SOTA claim still
-requires multiple public/downstream corpora, cold and cache-stress runs, construction amortization, natural Unicode,
-additional hardware, and adversarial length/hit-rate distributions; RSS and first-host parallel scaling are now
-recorded but need independent-machine confirmation.
+requires multiple public/downstream corpora, explicit construction-amortization scenarios, more natural languages,
+additional hardware, and more independent indexed implementations. Cold/cache-stress, natural Chinese, adversarial
+length/alphabet/hit-rate distributions, RSS, and first-host parallel scaling are now recorded but need
+independent-machine confirmation.
