@@ -91,6 +91,25 @@ on those bounds. Tantivy returns IDs without distances and currently rejects bou
 is a real advantage; because the StringZilla RSS capture included sequential construction through the larger `k=4`
 index, per-bound isolated RSS measurements are required before making a direct memory claim.
 
+Lucene 10.3.1 was tested in two distinct modes on OpenJDK 21. Its public `FuzzyQuery` is not the same exact contract:
+at English `k=2` it returned 199,789 rather than 201,190 hits because Lucene additionally requires edit distance to
+be less than the shorter term length. That 9.45 s result is therefore excluded from same-contract ratios. The exact
+mode constructs Lucene's public `LevenshteinAutomata` for every query and executes it through `AutomatonQuery` with
+transpositions disabled and a complete hit-count collector. It returned the validated totals on every corpus:
+
+| Corpus | Bound | StringZilla | Lucene exact automaton | StringZilla speedup |
+|:---|---:|---:|---:|---:|
+| English | 1 | 2.95 ms | 1.676 s | 568x |
+| English | 2 | 45.4 ms | 14.965 s | 330x |
+| Wikipedia URLs | 1 | 15.9 ms | 7.796 s | 489x |
+| Wikipedia URLs | 2 | 502.6 ms | 45.424 s | 90.4x |
+| four-symbol DNA | 1 | 12.9 ms | 963.8 ms | 74.7x |
+| four-symbol DNA | 2 | 107.5 ms | 5.644 s | 52.5x |
+
+The pinned harness is checked in. These numbers include query-automaton construction in both systems, and Lucene
+returns hit counts rather than distances, which favors Lucene. Java process RSS (roughly 0.8-0.9 GiB with a fixed
+heap configuration) is recorded for reproducibility but is not presented as a direct native-index memory comparison.
+
 The deletion index stores every residual produced by deleting `0..k` symbols, not exactly `k`: the latter cannot
 join unequal-length strings by a common residual. A 20-bit directory supplies the high hash bits. Dictionaries below
 `2^20` entries use packed 32-bit records (`12-bit hash suffix + 20-bit ID`); larger dictionaries require a wide
