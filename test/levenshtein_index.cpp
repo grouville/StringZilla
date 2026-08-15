@@ -39,12 +39,12 @@ int main() {
     dictionary.push_back(std::string(68, 'x'));
 
     szs::levenshtein_index<> index;
-    if (index.try_build(dictionary, 2) != sz::status_t::success_k) return 1;
+    if (index.try_build(dictionary, 4, 128) != sz::status_t::success_k) return 1;
     szs::levenshtein_index<>::scratch_t scratch;
     szs::levenshtein_index<>::matches_t matches;
     std::size_t checks = 0;
     for (auto const &query : dictionary)
-        for (std::uint8_t bound = 0; bound <= 2; ++bound) {
+        for (std::uint8_t bound = 0; bound <= 4; ++bound) {
             if (index.find({query.data(), query.size()}, bound, scratch, matches) != sz::status_t::success_k) return 2;
             std::vector<std::pair<std::uint32_t, std::uint8_t>> actual, expected;
             for (auto const &match : matches) actual.emplace_back(match.id, match.distance);
@@ -69,13 +69,29 @@ int main() {
             szs::levenshtein_index<>::scratch_t worker_scratch;
             szs::levenshtein_index<>::matches_t worker_matches;
             auto const &query = dictionary[dictionary.size() - 1 - worker];
-            concurrent_ok[worker] = index.find({query.data(), query.size()}, 2, worker_scratch, worker_matches) ==
+            concurrent_ok[worker] = index.find({query.data(), query.size()}, 4, worker_scratch, worker_matches) ==
                                         sz::status_t::success_k &&
                                     worker_matches.size() != 0;
             // Every query is present in the dictionary, so at least one exact match is required.
         });
     for (auto &worker : workers) worker.join();
     if (!concurrent_ok[0] || !concurrent_ok[1]) return 4;
+
+    // The default deletion cutoff routes unusually long words through the same exact trie even for k<=2.
+    szs::levenshtein_index<> fallback_index;
+    if (fallback_index.try_build(dictionary, 2) != sz::status_t::success_k) return 5;
+    auto const &long_query = dictionary[dictionary.size() - 2];
+    if (fallback_index.find({long_query.data(), long_query.size()}, 2, scratch, matches) !=
+        sz::status_t::success_k)
+        return 6;
+    std::vector<std::pair<std::uint32_t, std::uint8_t>> actual_fallback, expected_fallback;
+    for (auto const &match : matches) actual_fallback.emplace_back(match.id, match.distance);
+    for (std::uint32_t id = 0; id != dictionary.size(); ++id) {
+        std::size_t const score = distance(dictionary[id], long_query);
+        if (score <= 2) expected_fallback.emplace_back(id, static_cast<std::uint8_t>(score));
+    }
+    std::sort(actual_fallback.begin(), actual_fallback.end());
+    if (actual_fallback != expected_fallback) return 7;
     std::cout << "OK: " << checks << " exhaustive memberships, records=" << index.records_count()
               << " index_bytes=" << index.index_bytes() << '\n';
 }

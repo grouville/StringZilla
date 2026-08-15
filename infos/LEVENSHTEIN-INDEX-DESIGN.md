@@ -24,6 +24,13 @@ Production design for issue #243. Experimental evidence remains on branch
 | `k > 2` | compact trie/FST + banded DP | Avoids the combinatorial deletion-record expansion. |
 | unusually long strings | compact trie/FST or dense bounded verifier | Keeps construction memory bounded without false negatives. |
 
+The first compact-trie banded-DP implementation is exact through at least `k=4`, but its measured higher-bound wins
+are much smaller than the deletion index. On the 370,105-word / 10,000-query persisted corpus it takes 13.703 s at
+`k=3` and 42.29 s at `k=4`, versus pinned native RapidFuzz cached scans at 57.038 s and 70.85 s: 4.16x and 1.68x.
+Both return 3,158,139 and 26,600,296 matches. The next justified higher-bound optimization is a query-specific
+Levenshtein DFA/parametric automaton over the compact trie, caching transitions instead of recomputing the band for
+every edge. Do not project the low-bound 760-6,376x result onto this region.
+
 The deletion index stores every residual produced by deleting `0..k` symbols, not exactly `k`: the latter cannot
 join unequal-length strings by a common residual. A 20-bit directory supplies the high hash bits. Dictionaries below
 `2^20` entries use packed 32-bit records (`12-bit hash suffix + 20-bit ID`); larger dictionaries require a wide

@@ -31,7 +31,7 @@ int main(int argc, char **argv) {
     auto const queries = load_lines(argv[2], query_limit);
     std::cout << "dictionary=" << dictionary.size() << " queries=" << queries.size() << '\n';
 
-    for (std::uint8_t max_distance : {std::uint8_t(1), std::uint8_t(2)}) {
+    for (std::uint8_t max_distance : {std::uint8_t(1), std::uint8_t(2), std::uint8_t(4)}) {
         szs::levenshtein_index<> index;
         auto const build_start = std::chrono::steady_clock::now();
         if (sz::status_t status = index.try_build(dictionary, max_distance); status != sz::status_t::success_k) {
@@ -42,23 +42,26 @@ int main(int argc, char **argv) {
             std::chrono::duration<double>(std::chrono::steady_clock::now() - build_start).count();
         std::cout << "k=" << unsigned(max_distance) << " build=" << build_seconds
                   << "s records=" << index.records_count() << " index_bytes=" << index.index_bytes()
-                  << " dictionary_bytes=" << index.dictionary_bytes() << '\n';
+                  << " trie_bytes=" << index.trie_bytes() << " dictionary_bytes=" << index.dictionary_bytes()
+                  << '\n';
 
         szs::levenshtein_index<>::scratch_t scratch;
         szs::levenshtein_index<>::matches_t matches;
-        for (int repeat = 0; repeat != 3; ++repeat) {
-            std::size_t matches_count = 0;
-            auto const start = std::chrono::steady_clock::now();
-            for (auto const &query : queries) {
-                if (index.find({query.data(), query.size()}, max_distance, scratch, matches) !=
-                    sz::status_t::success_k)
-                    return 4;
-                matches_count += matches.size();
+        std::uint8_t const first_bound = max_distance <= 2 ? max_distance : 3;
+        for (std::uint8_t bound = first_bound; bound <= max_distance; ++bound)
+            for (int repeat = 0; repeat != 3; ++repeat) {
+                std::size_t matches_count = 0;
+                auto const start = std::chrono::steady_clock::now();
+                for (auto const &query : queries) {
+                    if (index.find({query.data(), query.size()}, bound, scratch, matches) !=
+                        sz::status_t::success_k)
+                        return 4;
+                    matches_count += matches.size();
+                }
+                double const elapsed =
+                    std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+                std::cout << "k=" << unsigned(bound) << " query=" << elapsed << "s matches=" << matches_count
+                          << " output_element_bytes=" << sizeof(szs::levenshtein_index_match_t) << '\n';
             }
-            double const elapsed =
-                std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
-            std::cout << "k=" << unsigned(max_distance) << " query=" << elapsed << "s matches=" << matches_count
-                      << " output_element_bytes=" << sizeof(szs::levenshtein_index_match_t) << '\n';
-        }
     }
 }

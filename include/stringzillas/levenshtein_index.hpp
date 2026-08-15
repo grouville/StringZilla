@@ -41,6 +41,23 @@ class levenshtein_index {
     static constexpr u32_t packed_id_mask_k = (u32_t(1) << packed_id_bits_k) - 1;
     static constexpr u8_t rejected_distance_k = 3;
 
+    struct trie_node_t {
+        u32_t first_edge = 0;
+        u32_t edges_count = 0;
+        u32_t first_terminal = 0;
+        u32_t terminals_count = 0;
+    };
+    struct trie_edge_t {
+        u32_t child = 0;
+        u8_t symbol = 0;
+    };
+    struct trie_frame_t {
+        u32_t node = 0;
+        u32_t next_edge = 0;
+        u32_t end_edge = 0;
+        u32_t depth = 0;
+    };
+
     template <typename value_type_>
     using rebound_allocator_t =
         typename std::allocator_traits<allocator_t>::template rebind_alloc<value_type_>;
@@ -53,8 +70,13 @@ class levenshtein_index {
     vector_t<u32_t> directory_ {alloc_};
     vector_t<u32_t> packed_records_ {alloc_};
     vector_t<u64_t> wide_records_ {alloc_};
+    vector_t<trie_node_t> trie_nodes_ {alloc_};
+    vector_t<trie_edge_t> trie_edges_ {alloc_};
+    vector_t<u32_t> trie_terminals_ {alloc_};
     u8_t max_distance_ = 0;
     size_t max_word_length_ = 0;
+    size_t deletion_max_word_length_ = 64;
+    size_t fallback_words_count_ = 0;
 
     static u32_t fold_hash_(u64_t hash) noexcept {
         hash ^= hash >> 33;
@@ -219,10 +241,165 @@ class levenshtein_index {
         return distance_within_two_(candidate, query, scratch);
     }
 
+    status_t build_trie_() noexcept {
+        size_t const words_count = size();
+        vector_t<u32_t> order {alloc_}, parents {alloc_}, word_nodes {alloc_}, child_cursors {alloc_},
+            terminal_cursors {alloc_}, stack {alloc_};
+        vector_t<u8_t> symbols {alloc_};
+        if (order.try_resize(words_count) != status_t::success_k ||
+            word_nodes.try_resize(words_count) != status_t::success_k)
+            return status_t::bad_alloc_k;
+        for (u32_t id = 0; id != words_count; ++id) order[id] = id;
+        std::sort(order.begin(), order.end(), [&](u32_t first_id, u32_t second_id) {
+            span<char const> const first = word_(first_id), second = word_(second_id);
+            size_t const shared = sz_min_of_two(first.size(), second.size());
+            int const compared = shared ? std::memcmp(first.data(), second.data(), shared) : 0;
+            if (compared != 0) return compared < 0;
+            if (first.size() != second.size()) return first.size() < second.size();
+            return first_id < second_id;
+        });
+
+        if (parents.try_push_back(0) != status_t::success_k || symbols.try_push_back(0) != status_t::success_k ||
+            stack.try_push_back(0) != status_t::success_k)
+            return status_t::bad_alloc_k;
+        span<char const> previous;
+        for (u32_t id : order) {
+            span<char const> const word = word_(id);
+            size_t common = 0, common_limit = sz_min_of_two(previous.size(), word.size());
+            while (common != common_limit && previous[common] == word[common]) ++common;
+            if (stack.try_resize(common + 1) != status_t::success_k) return status_t::bad_alloc_k;
+            for (size_t position = common; position != word.size(); ++position) {
+                if (parents.size() == std::numeric_limits<u32_t>::max()) return status_t::overflow_risk_k;
+                u32_t const node = static_cast<u32_t>(parents.size());
+                if (parents.try_push_back(stack.back()) != status_t::success_k ||
+                    symbols.try_push_back(static_cast<u8_t>(word[position])) != status_t::success_k ||
+                    stack.try_push_back(node) != status_t::success_k)
+                    return status_t::bad_alloc_k;
+            }
+            word_nodes[id] = stack.back();
+            previous = word;
+        }
+
+        size_t const nodes_count = parents.size();
+        if (trie_nodes_.try_resize(nodes_count) != status_t::success_k ||
+            trie_edges_.try_resize(nodes_count ? nodes_count - 1 : 0) != status_t::success_k ||
+            trie_terminals_.try_resize(words_count) != status_t::success_k ||
+            child_cursors.try_resize(nodes_count) != status_t::success_k ||
+            terminal_cursors.try_resize(nodes_count) != status_t::success_k)
+            return status_t::bad_alloc_k;
+        for (size_t node = 1; node != nodes_count; ++node) ++trie_nodes_[parents[node]].edges_count;
+        for (u32_t id = 0; id != words_count; ++id) ++trie_nodes_[word_nodes[id]].terminals_count;
+        u32_t edge_offset = 0, terminal_offset = 0;
+        for (size_t node = 0; node != nodes_count; ++node) {
+            trie_nodes_[node].first_edge = edge_offset;
+            trie_nodes_[node].first_terminal = terminal_offset;
+            child_cursors[node] = edge_offset;
+            terminal_cursors[node] = terminal_offset;
+            edge_offset += trie_nodes_[node].edges_count;
+            terminal_offset += trie_nodes_[node].terminals_count;
+        }
+        for (u32_t node = 1; node != nodes_count; ++node)
+            trie_edges_[child_cursors[parents[node]]++] = trie_edge_t {node, symbols[node]};
+        for (u32_t id = 0; id != words_count; ++id)
+            trie_terminals_[terminal_cursors[word_nodes[id]]++] = id;
+        return status_t::success_k;
+    }
+
+    template <typename scratch_type_>
+    status_t find_trie_(span<char const> query, u8_t bound, bool fallback_only, scratch_type_ &scratch,
+                        vector_t<match_t> &matches) const noexcept {
+        if (!trie_nodes_.size()) return status_t::success_k;
+        size_t const stride = size_t(2) * bound + 3;
+        if (max_word_length_ + 1 > std::numeric_limits<size_t>::max() / stride)
+            return status_t::overflow_risk_k;
+        if (scratch.trie_rows.try_resize((max_word_length_ + 1) * stride) != status_t::success_k ||
+            scratch.trie_frames.try_resize(0) != status_t::success_k ||
+            scratch.trie_frames.try_reserve(max_word_length_ + 1) != status_t::success_k)
+            return status_t::bad_alloc_k;
+        u16_t const cap = static_cast<u16_t>(bound) + 1;
+        u16_t *root_row = scratch.trie_rows.data();
+        size_t const root_to = sz_min_of_two(query.size(), size_t(bound));
+        for (size_t column = 0; column <= root_to; ++column) root_row[column] = static_cast<u16_t>(column);
+
+        auto const emit_terminals = [&](u32_t node_id, u16_t distance) noexcept -> status_t {
+            trie_node_t const &node = trie_nodes_[node_id];
+            for (size_t offset = node.first_terminal; offset != node.first_terminal + node.terminals_count; ++offset) {
+                u32_t const id = trie_terminals_[offset];
+                if (fallback_only && word_(id).size() <= deletion_max_word_length_) continue;
+                if (status_t status = matches.try_push_back(match_t {id, static_cast<u8_t>(distance)});
+                    status != status_t::success_k)
+                    return status;
+            }
+            return status_t::success_k;
+        };
+        if (query.size() <= bound)
+            if (status_t status = emit_terminals(0, static_cast<u16_t>(query.size()));
+                status != status_t::success_k)
+                return status;
+
+        trie_node_t const &root = trie_nodes_[0];
+        if (scratch.trie_frames.try_push_back(
+                trie_frame_t {0, root.first_edge, root.first_edge + root.edges_count, 0}) != status_t::success_k)
+            return status_t::bad_alloc_k;
+        while (scratch.trie_frames.size()) {
+            trie_frame_t &frame = scratch.trie_frames.back();
+            if (frame.next_edge == frame.end_edge) {
+                scratch.trie_frames.try_resize(scratch.trie_frames.size() - 1);
+                continue;
+            }
+            trie_edge_t const edge = trie_edges_[frame.next_edge++];
+            size_t const previous_depth = frame.depth;
+            size_t const current_depth = previous_depth + 1;
+            size_t const previous_from = previous_depth > bound ? previous_depth - bound : 0;
+            size_t const previous_to = sz_min_of_two(query.size(), previous_depth + bound);
+            size_t const current_from = current_depth > bound ? current_depth - bound : 0;
+            size_t const current_to = sz_min_of_two(query.size(), current_depth + bound);
+            u16_t const *previous_row = scratch.trie_rows.data() + previous_depth * stride;
+            u16_t *current_row = scratch.trie_rows.data() + current_depth * stride;
+            auto const previous_at = [&](size_t column) noexcept -> u16_t {
+                return column >= previous_from && column <= previous_to ? previous_row[column - previous_from] : cap;
+            };
+            u16_t row_min = cap;
+            for (size_t column = current_from; column <= current_to; ++column) {
+                u16_t value;
+                if (column == 0) value = static_cast<u16_t>(sz_min_of_two(current_depth, size_t(cap)));
+                else {
+                    unsigned const deletion = unsigned(previous_at(column)) + 1;
+                    unsigned const insertion =
+                        column > current_from ? unsigned(current_row[column - current_from - 1]) + 1 : cap;
+                    unsigned const substitution =
+                        unsigned(previous_at(column - 1)) + (query[column - 1] != static_cast<char>(edge.symbol));
+                    value = static_cast<u16_t>(sz_min_of_two(std::min({deletion, insertion, substitution}),
+                                                             unsigned(cap)));
+                }
+                current_row[column - current_from] = value;
+                row_min = sz_min_of_two(row_min, value);
+            }
+            if (query.size() >= current_from && query.size() <= current_to) {
+                u16_t const distance = current_row[query.size() - current_from];
+                if (distance <= bound)
+                    if (status_t status = emit_terminals(edge.child, distance); status != status_t::success_k)
+                        return status;
+            }
+            if (row_min <= bound) {
+                trie_node_t const &child = trie_nodes_[edge.child];
+                if (scratch.trie_frames.try_push_back(trie_frame_t {
+                        edge.child, child.first_edge, child.first_edge + child.edges_count,
+                        static_cast<u32_t>(current_depth)}) != status_t::success_k)
+                    return status_t::bad_alloc_k;
+            }
+        }
+        return status_t::success_k;
+    }
+
     template <typename sequences_type_, typename build_scratch_type_>
-    status_t build_(sequences_type_ const &dictionary, u8_t max_distance, build_scratch_type_ &scratch) noexcept {
-        if (max_distance > 2) return status_t::unexpected_dimensions_k;
+    status_t build_(sequences_type_ const &dictionary, u8_t max_distance, size_t deletion_max_word_length,
+                    build_scratch_type_ &scratch) noexcept {
+        if (max_distance == std::numeric_limits<u8_t>::max()) return status_t::unexpected_dimensions_k;
         if (dictionary.size() > std::numeric_limits<u32_t>::max()) return status_t::overflow_risk_k;
+        u8_t const indexed_distance = sz_min_of_two(max_distance, u8_t(2));
+        deletion_max_word_length_ = deletion_max_word_length;
+        fallback_words_count_ = 0;
 
         size_t tape_bytes = 0, records_upper_bound = 0;
         max_word_length_ = 0;
@@ -230,10 +407,13 @@ class levenshtein_index {
             auto const item = dictionary[id];
             size_t const length = item.size();
             if (!checked_add_(tape_bytes, length)) return status_t::overflow_risk_k;
-            size_t word_records = 0;
-            if (!residuals_upper_bound_(length, max_distance, word_records) ||
-                !checked_add_(records_upper_bound, word_records))
-                return status_t::overflow_risk_k;
+            if (length <= deletion_max_word_length_) {
+                size_t word_records = 0;
+                if (!residuals_upper_bound_(length, indexed_distance, word_records) ||
+                    !checked_add_(records_upper_bound, word_records))
+                    return status_t::overflow_risk_k;
+            }
+            else ++fallback_words_count_;
             max_word_length_ = sz_max_of_two(max_word_length_, length);
         }
         if (records_upper_bound > std::numeric_limits<u32_t>::max()) return status_t::overflow_risk_k;
@@ -249,12 +429,15 @@ class levenshtein_index {
             offsets_[id] = static_cast<u64_t>(tape_offset);
             if (!word.empty()) std::memcpy(tape_.data() + tape_offset, word.data(), word.size());
             tape_offset += word.size();
-            if (status_t status = generate_residuals_(word, max_distance, scratch); status != status_t::success_k)
-                return status;
-            for (u32_t hash : scratch.residuals)
-                if (status_t status = wide_records_.try_push_back((u64_t(hash) << 32) | id);
+            if (word.size() <= deletion_max_word_length_) {
+                if (status_t status = generate_residuals_(word, indexed_distance, scratch);
                     status != status_t::success_k)
                     return status;
+                for (u32_t hash : scratch.residuals)
+                    if (status_t status = wide_records_.try_push_back((u64_t(hash) << 32) | id);
+                        status != status_t::success_k)
+                        return status;
+            }
         }
         offsets_[dictionary.size()] = static_cast<u64_t>(tape_offset);
         std::sort(wide_records_.begin(), wide_records_.end());
@@ -278,6 +461,8 @@ class levenshtein_index {
             }
             wide_records_.reset();
         }
+        if (max_distance > 2 || fallback_words_count_)
+            if (status_t status = build_trie_(); status != status_t::success_k) return status;
         max_distance_ = max_distance;
         return status_t::success_k;
     }
@@ -290,24 +475,29 @@ class levenshtein_index {
         vector_t<u64_t> prefixes;
         vector_t<u64_t> powers;
         vector_t<u8_t> dp_rows;
+        vector_t<u16_t> trie_rows;
+        vector_t<trie_frame_t> trie_frames;
         u32_t generation = 0;
 
       public:
         explicit scratch_t(allocator_t alloc = {}) noexcept
-            : generations(alloc), residuals(alloc), prefixes(alloc), powers(alloc), dp_rows(alloc) {}
+            : generations(alloc), residuals(alloc), prefixes(alloc), powers(alloc), dp_rows(alloc), trie_rows(alloc),
+              trie_frames(alloc) {}
     };
 
     using matches_t = vector_t<match_t>;
 
     explicit levenshtein_index(allocator_t alloc = {}) noexcept
         : alloc_(alloc), tape_(alloc), offsets_(alloc), directory_(alloc), packed_records_(alloc),
-          wide_records_(alloc) {}
+          wide_records_(alloc), trie_nodes_(alloc), trie_edges_(alloc), trie_terminals_(alloc) {}
 
     template <typename sequences_type_>
-    status_t try_build(sequences_type_ const &dictionary, u8_t max_distance) noexcept {
+    status_t try_build(sequences_type_ const &dictionary, u8_t max_distance,
+                       size_t deletion_max_word_length = 64) noexcept {
         levenshtein_index candidate {alloc_};
         scratch_t scratch {alloc_};
-        if (status_t status = candidate.build_(dictionary, max_distance, scratch); status != status_t::success_k)
+        if (status_t status = candidate.build_(dictionary, max_distance, deletion_max_word_length, scratch);
+            status != status_t::success_k)
             return status;
         *this = std::move(candidate);
         return status_t::success_k;
@@ -316,6 +506,7 @@ class levenshtein_index {
     status_t find(span<char const> query, u8_t bound, scratch_t &scratch, matches_t &matches) const noexcept {
         if (bound > max_distance_) return status_t::unexpected_dimensions_k;
         if (status_t status = matches.try_resize(0); status != status_t::success_k) return status;
+        if (bound > 2) return find_trie_(query, bound, false, scratch, matches);
         if (scratch.generations.size() != size()) {
             if (status_t status = scratch.generations.try_resize(size()); status != status_t::success_k) return status;
             std::fill(scratch.generations.begin(), scratch.generations.end(), u32_t(0));
@@ -365,6 +556,8 @@ class levenshtein_index {
                 }
             }
         }
+        if (fallback_words_count_)
+            return find_trie_(query, bound, true, scratch, matches);
         return status_t::success_k;
     }
 
@@ -377,10 +570,14 @@ class levenshtein_index {
     }
     size_t index_bytes() const noexcept {
         return directory_.size() * sizeof(u32_t) + packed_records_.size() * sizeof(u32_t) +
-               wide_records_.size() * sizeof(u64_t);
+               wide_records_.size() * sizeof(u64_t) + trie_bytes();
     }
     size_t dictionary_bytes() const noexcept {
         return tape_.size() * sizeof(char) + offsets_.size() * sizeof(u64_t);
+    }
+    size_t trie_bytes() const noexcept {
+        return trie_nodes_.size() * sizeof(trie_node_t) + trie_edges_.size() * sizeof(trie_edge_t) +
+               trie_terminals_.size() * sizeof(u32_t);
     }
 };
 
