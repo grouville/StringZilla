@@ -38,6 +38,26 @@ decodes each query inside the timed call, favoring RapidFuzz. More importantly, 
 streams were byte-identical at both bounds and reproduced the topology-preserved hashes above (`10e1ce...38a6` and
 `9fa72b...7bb4`).
 
+A natural Unicode corpus was derived reproducibly from SymSpell-Rust's bundled 349,045-entry Simplified Chinese
+frequency dictionary. The checked-in extractor takes the first whitespace-delimited term and retains unique terms
+that are already lowercase, avoiding any case-folding contract change. This produced 348,980 strings, SHA-256
+`90b2ae3c74b06996acde562b031771e0567baa8ea104179b764d67ed0d2b974a`. The codepoint-aware generator produced
+10,000 equal-part mixed queries with seed 243, SHA-256
+`8178000a76ac3090c0e6bc4d753506c6edc05316ca249c9a97289488ee4aeabd`.
+
+This corpus is an intentionally difficult dense-output regime. At `k=1`, 2,219,220 matches took a 16.294 ms warmed
+median in StringZilla, 442.972 ms in SymSpell, and 21.523 s in a single RapidFuzz oracle pass: 27.2x and 1,321x leads.
+At `k=2`, 343,237,926 matches took 5.038 s in StringZilla, 144.709 s in the single long SymSpell pass, and 35.917 s
+in RapidFuzz: 28.7x faster than the indexed baseline but only 7.13x faster than the dense scan. The complete
+StringZilla and RapidFuzz streams were byte-identical. Their sizes/hashes were 11,176,125 bytes and
+`1cfa6a220e8af6d298b3e92555b6fcb8adb6abe767c0b94f02e2c032ebd69eed` at `k=1`, and 1,716,269,655 bytes and
+`7db80c5960b3bd78b6e0d0cec86fbf8e6a045284229b110aef84bcb2350a4e53` at `k=2`.
+
+StringZilla built in 0.099/0.176 s and used 72.5/144.1 MB for the index plus 6.9 MB for its owned decoded dictionary;
+SymSpell built in 0.212/0.377 s. The output density explains why the low-bound English ratios cannot be projected onto
+all languages or query mixes: at `k=2`, about 34,324 matches are materialized per query. The one-pass competitor times
+must not be presented as confidence intervals, but their margins are large enough to establish the qualitative result.
+
 Rust `fst` 0.4.7 cannot currently serve as the Unicode baseline despite documenting Unicode-scalar semantics. On a
 three-key smoke test where `"é"`, `"Ѐ"`, and `"А"` must produce nine matches at distance one, it returned seven,
 omitting the two substitutions between multibyte scalars sharing the same leading UTF-8 byte. On the transcoded
@@ -216,7 +236,9 @@ must be re-fitted or replaced by a calibrated build/query/memory model before a 
 
 Length and alphabet materially change the winning representation, so the English dictionary is not sufficient
 evidence. The latter two deterministic mixed-query corpora below contain equal quarters of exact hits, one-edit
-mutations, two-edit mutations, and length-guaranteed rejects:
+mutations, two-edit mutations, and five-symbol length extensions. Those extensions are guaranteed beyond four edits
+from their sampled source, but may match a different dictionary entry; the independent full-dictionary oracle, rather
+than the generator label, determines their actual selectivity:
 
 | Dictionary / queries | Shape | Auto plan | `k=1` | `k=2` | Tantivy `k=1/2` |
 |:---|:---|:---|---:|---:|---:|
