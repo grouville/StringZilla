@@ -57,7 +57,7 @@ static bool dump_matches(index_type_ const &index, std::vector<std::string> cons
 template <typename index_type_>
 static int run(std::vector<std::string> const &dictionary, std::vector<std::string> const &queries,
                std::size_t deletion_max_length, std::vector<std::uint8_t> const &max_distances,
-               std::string const &dump_prefix) {
+               std::string const &dump_prefix, int query_repeats) {
     for (std::uint8_t max_distance : max_distances) {
         index_type_ index;
         auto const build_start = std::chrono::steady_clock::now();
@@ -77,7 +77,7 @@ static int run(std::vector<std::string> const &dictionary, std::vector<std::stri
         typename index_type_::matches_t matches;
         std::uint8_t const first_bound = max_distance <= 2 ? max_distance : 3;
         for (std::uint8_t bound = first_bound; bound <= max_distance; ++bound) {
-            for (int repeat = 0; repeat != 3; ++repeat) {
+            for (int repeat = 0; repeat != query_repeats; ++repeat) {
                 std::size_t matches_count = 0;
                 auto const start = std::chrono::steady_clock::now();
                 for (auto const &query : queries) {
@@ -120,6 +120,13 @@ int main(int argc, char **argv) {
                                 : szs::levenshtein_index<>::automatic_deletion_max_word_length_k;
 
     std::vector<std::uint8_t> max_distances = {1, 2, 4};
+    int const query_repeats = std::getenv("SZ_LEVENSHTEIN_REPEATS")
+                                  ? std::stoi(std::getenv("SZ_LEVENSHTEIN_REPEATS"))
+                                  : 3;
+    if (query_repeats <= 0) {
+        std::cerr << "SZ_LEVENSHTEIN_REPEATS must be positive\n";
+        return 2;
+    }
     if (char const *requested_max = std::getenv("SZ_LEVENSHTEIN_MAX_DISTANCE")) {
         int const parsed = std::stoi(requested_max);
         if (parsed != 1 && parsed != 2 && parsed != 4) {
@@ -129,7 +136,7 @@ int main(int argc, char **argv) {
         max_distances = {static_cast<std::uint8_t>(parsed)};
     }
     return utf8 ? run<szs::levenshtein_index_utf8<>>(dictionary, queries, deletion_max_length, max_distances,
-                                                     dump_prefix)
+                                                     dump_prefix, query_repeats)
                 : run<szs::levenshtein_index<>>(dictionary, queries, deletion_max_length, max_distances,
-                                                dump_prefix);
+                                                dump_prefix, query_repeats);
 }

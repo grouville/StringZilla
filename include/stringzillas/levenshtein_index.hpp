@@ -39,11 +39,9 @@ class basic_levenshtein_index {
                   "Levenshtein index symbols must be integral and at most 32 bits wide");
 
   private:
-    static constexpr size_t prefix_bits_k = 20;
-    static constexpr size_t suffix_bits_k = 32 - prefix_bits_k;
+    static constexpr size_t min_prefix_bits_k = 20;
+    static constexpr size_t max_prefix_bits_k = 25;
     static constexpr size_t packed_id_bits_k = 20;
-    static constexpr size_t prefix_buckets_k = size_t(1) << prefix_bits_k;
-    static constexpr u32_t suffix_mask_k = (u32_t(1) << suffix_bits_k) - 1;
     static constexpr u32_t packed_id_mask_k = (u32_t(1) << packed_id_bits_k) - 1;
     static constexpr u8_t rejected_distance_k = 3;
 
@@ -105,6 +103,9 @@ class basic_levenshtein_index {
     size_t max_word_length_ = 0;
     size_t deletion_max_word_length_ = 64;
     size_t fallback_words_count_ = 0;
+    u8_t prefix_bits_ = min_prefix_bits_k;
+    u8_t suffix_bits_ = 32 - min_prefix_bits_k;
+    u32_t suffix_mask_ = (u32_t(1) << (32 - min_prefix_bits_k)) - 1;
 
     static u32_t fold_hash_(u64_t hash) noexcept {
         hash ^= hash >> 33;
@@ -794,15 +795,25 @@ class basic_levenshtein_index {
         std::sort(wide_records_.begin(), wide_records_.end());
 
         if (wide_records_.size()) {
-            if (directory_.try_resize(prefix_buckets_k + 1) != status_t::success_k) return status_t::bad_alloc_k;
+            prefix_bits_ = min_prefix_bits_k;
+            // Keep large directories sparse enough that the overwhelmingly common miss or single-record bucket
+            // avoids a multi-step lower_bound. Small indexes retain the 4 MiB minimum directory; large deletion
+            // indexes trade at most 128 MiB for lower steady-state query latency.
+            while (prefix_bits_ != max_prefix_bits_k &&
+                   wide_records_.size() > (size_t(1) << (prefix_bits_ - 3)))
+                ++prefix_bits_;
+            suffix_bits_ = static_cast<u8_t>(32 - prefix_bits_);
+            suffix_mask_ = (u32_t(1) << suffix_bits_) - 1;
+            size_t const prefix_buckets = size_t(1) << prefix_bits_;
+            if (directory_.try_resize(prefix_buckets + 1) != status_t::success_k) return status_t::bad_alloc_k;
             size_t cursor = 0;
-            for (size_t prefix = 0; prefix != prefix_buckets_k; ++prefix) {
+            for (size_t prefix = 0; prefix != prefix_buckets; ++prefix) {
                 directory_[prefix] = static_cast<u32_t>(cursor);
                 while (cursor != wide_records_.size() &&
-                       (u32_t(wide_records_[cursor] >> 32) >> suffix_bits_k) == prefix)
+                       (u32_t(wide_records_[cursor] >> 32) >> suffix_bits_) == prefix)
                     ++cursor;
             }
-            directory_[prefix_buckets_k] = static_cast<u32_t>(wide_records_.size());
+            directory_[prefix_buckets] = static_cast<u32_t>(wide_records_.size());
         }
 
         if (wide_records_.size() && dictionary.size() <= size_t(1) << packed_id_bits_k) {
@@ -811,7 +822,7 @@ class basic_levenshtein_index {
             for (size_t index = 0; index != wide_records_.size(); ++index) {
                 u32_t const hash = static_cast<u32_t>(wide_records_[index] >> 32);
                 u32_t const id = static_cast<u32_t>(wide_records_[index]);
-                packed_records_[index] = ((hash & suffix_mask_k) << packed_id_bits_k) | id;
+                packed_records_[index] = ((hash & suffix_mask_) << packed_id_bits_k) | id;
             }
             wide_records_.reset();
         }
@@ -878,7 +889,7 @@ class basic_levenshtein_index {
         if (status_t status = generate_residuals_(query, bound, scratch); status != status_t::success_k) return status;
 
         for (u32_t hash : scratch.residuals) {
-            size_t const prefix = hash >> suffix_bits_k;
+            size_t const prefix = hash >> suffix_bits_;
             size_t const begin_offset = directory_[prefix];
             size_t const end_offset = directory_[prefix + 1];
             if (!packed_records_.size()) {
@@ -898,7 +909,7 @@ class basic_levenshtein_index {
                 }
             }
             else {
-                u32_t const suffix = hash & suffix_mask_k;
+                u32_t const suffix = hash & suffix_mask_;
                 u32_t const key = suffix << packed_id_bits_k;
                 u32_t const *record = std::lower_bound(packed_records_.begin() + begin_offset,
                                                        packed_records_.begin() + end_offset, key);
