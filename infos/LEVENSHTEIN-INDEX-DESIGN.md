@@ -116,6 +116,24 @@ The pinned harness is checked in. These numbers include query-automaton construc
 returns hit counts rather than distances, which favors Lucene. Java process RSS (roughly 0.8-0.9 GiB with a fixed
 heap configuration) is recorded for reproducibility but is not presented as a direct native-index memory comparison.
 
+## StringWars relationship
+
+StringWars' existing similarity categories are valid dense matrix workloads; immutable-dictionary retrieval is a
+different sparse-output category and should not replace them. The first experimental `within_k` extension on this
+work branch reused different random inputs across competitors, mixed byte and text semantics, compared different
+matrix sizes and thread counts, and labelled raw cutoff distances as though they were boolean membership. Those were
+our extension's errors, not defects in Ash's pre-existing suite. The corrected branch is preserved at
+[`grouville/StringWars@1f81925`](https://github.com/grouville/StringWars/commit/1f81925): it uses identical deterministic
+inputs, verifies every 512-by-512 matrix against a byte-level RapidFuzz oracle, separates random/sparse/dense
+selectivity, matches matrix side and CPU scope, and labels allocation-inclusive, caller-buffer, raw-distance, and
+boolean outputs separately.
+
+On the 12-thread AVX-512 server, the final 0.5-second English run verified 2,359,296 cells with zero mismatches. At
+one CPU and matched 16-by-16 matrices, StringZilla's allocation-inclusive boolean engine was 1.21x to 2.50x faster
+than RapidFuzz `process.cdist` boolean membership across bounds 1/2/4 and random/sparse/dense mixes. The smallest lead
+was dense `k=4` (65.0 versus 53.8 million comparisons/s); the largest was reject-heavy `k=1` (138.2 versus 55.2
+million comparisons/s). These dense-engine results neither prove nor weaken the much larger immutable-index gains.
+
 The deletion index stores every residual produced by deleting `0..k` symbols, not exactly `k`: the latter cannot
 join unequal-length strings by a common residual. A 20-bit directory supplies the high hash bits. Dictionaries below
 `2^20` entries use packed 32-bit records (`12-bit hash suffix + 20-bit ID`); larger dictionaries require a wide
