@@ -83,6 +83,13 @@ owned-dictionary storage was 113,737,588 bytes. Match counts agreed at every bou
 required for this independent implementation; the stronger byte-for-byte ID-and-distance gate above applies to
 RapidFuzz. The checked-in Rust harness rejects non-ASCII inputs rather than silently comparing different semantics.
 
+Tantivy 0.26.1 was also benchmarked through its public `FuzzyTermQuery` with transpositions disabled and
+`DocSetCollector` materializing every document address. It built its in-memory index in 216.6 ms and peaked at
+98,876 KiB RSS. Median query time was 485.1 ms at `k=1` and 4.183 s at `k=2`, making StringZilla 158x and 92x faster
+on those bounds. Tantivy returns IDs without distances and currently rejects bounds above two. Its lower observed RSS
+is a real advantage; because the StringZilla RSS capture included sequential construction through the larger `k=4`
+index, per-bound isolated RSS measurements are required before making a direct memory claim.
+
 The deletion index stores every residual produced by deleting `0..k` symbols, not exactly `k`: the latter cannot
 join unequal-length strings by a common residual. A 20-bit directory supplies the high hash bits. Dictionaries below
 `2^20` entries use packed 32-bit records (`12-bit hash suffix + 20-bit ID`); larger dictionaries require a wide
