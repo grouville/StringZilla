@@ -180,7 +180,9 @@ The corrected StringWars work is preserved at
 [`grouville/StringWars@1f81925`](https://github.com/grouville/StringWars/commit/1f81925), with the complete change
 against Ash's current base visible in the
 [`main...levenshtein-within-k-bench` comparison](https://github.com/grouville/StringWars/compare/main...grouville:levenshtein-within-k-bench).
-Problems in the first experimental extension were ours, not defects in Ash's existing suite.
+The dependent benchmark extension is open separately as
+[`StringWars #9`](https://github.com/ashvardanian/StringWars/pull/9). Problems in the first experimental extension
+were ours, not defects in Ash's existing suite.
 
 ## Other same-purpose baselines
 
