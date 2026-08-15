@@ -1,0 +1,69 @@
+Host: ubuntu@51.159.203.6
+CPU: AMD EPYC 4245P, one calling thread, native Zen 4 AVX-512
+Date: 2026-08-15
+Prototype: levenshtein_index_prototype.cpp
+Build flags: g++ -std=c++20 -O3 -march=native -DNDEBUG -DFASTSS_ONLY -DFASTSS_SPLIT_THRESHOLD=1000 -DFASTSS_PREFIX_BITS=20 -DFASTSS_ID_BITS=20
+
+Correctness
+-----------
+selftest passed: 522242 memberships
+
+The self-test enumerates every binary string of length 0..8 over {NUL, 'a'} and checks
+both k=1 and k=2 index results against independent full dynamic programming. The larger
+benchmarks below also agree exactly with an independent trie-DP implementation and Tantivy.
+
+Original literature dataset, identical persisted queries
+--------------------------------------------------------
+Dictionary: chegrane/TrieRTrie dataset/words.english_213 557_.txt
+Dictionary words: 213,557
+Queries: 10,000 mixed typo/random, seed 42, persisted at /home/ubuntu/paper_queries.txt
+
+Tantivy 0.26.0:
+  build                              0.298035 s
+  k=1 query                          0.450529 s, 5,414 matches
+  k=2 query                          3.867750 s, 86,375 matches
+
+Packed FastSS plus 20-bit radix directory (sparse IDs materialized):
+  k=1 build                          0.135030 s
+  k=1 records                        2,261,343 x 4 B = 9,045,372 B
+  k=1 directory                      4,194,308 B
+  k=1 warm query                     0.002581 s, 5,414 IDs / 21,656 B
+  k=2 build                          0.802107 s
+  k=2 records                       11,886,193 x 4 B = 47,544,772 B
+  k=2 directory                      4,194,308 B
+  k=2 warm query                     0.031218 s, 86,375 IDs / 345,500 B
+
+Query speedups over Tantivy: 174.6x at k=1 and 123.9x at k=2. These are exact-output,
+same-query comparisons. Tantivy search returns hit objects; the prototype materializes IDs.
+
+Larger English corpus, cache-stress run
+---------------------------------------
+Dictionary: dwyl/english-words words_alpha.txt
+Dictionary words: 370,105
+Queries: 100,000 mixed typo/random, seed 42
+
+  k=1 build                          0.226365 s
+  k=1 records                        3,774,912 x 4 B = 15,099,648 B
+  k=1 directory                      4,194,308 B
+  k=1 warm query                     0.031945 s, 108,314 IDs / 433,256 B
+  k=2 build                          1.335130 s
+  k=2 records                       19,234,970 x 4 B = 76,939,880 B
+  k=2 directory                      4,194,308 B
+  k=2 warm query                     0.489420 s, 2,448,031 IDs / 9,792,124 B
+
+The 20-bit directory is the measured space/time knee. With 64-bit records, k=2 took
+~0.508 s and 153,879,760 record bytes. Packed records therefore reduce persistent record
+space by exactly half and improve the cache-stress query by ~3.6%. A 23-bit / 32 MiB
+directory improved 64-bit-record k=2 time by only ~3%, so it is not the default.
+
+Methodology caveats
+-------------------
+- Record/directory bytes exclude the owned dictionary tape, offsets, generation counters,
+  and returned IDs. Those must be included in production RSS accounting.
+- Timings after the first pass are warm-cache medians. The 100,000-query corpus is included
+  to prevent a tiny repeated lookup footprint from making the index look unrealistically fast.
+- FastSS is a lossless candidate filter. Every candidate is independently verified, so a
+  32-bit residual-hash collision can add work/false candidates before verification but cannot
+  change the returned result.
+- The prototype's mutable generation array is not thread-safe. Production needs per-call or
+  per-worker scratch state before parallel query execution.

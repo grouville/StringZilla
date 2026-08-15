@@ -1,0 +1,7 @@
+dictionary=370105 queries=10000
+k=1 rapidfuzz-cached 20.6712s matches=9103 output_bytes=36412
+k=1 rapidfuzz-cached 20.6121s matches=9103 output_bytes=36412
+k=1 rapidfuzz-cached 20.8199s matches=9103 output_bytes=36412
+k=2 rapidfuzz-cached 35.1785s matches=201190 output_bytes=804760
+k=2 rapidfuzz-cached 35.2618s matches=201190 output_bytes=804760
+k=2 rapidfuzz-cached 35.2832s matches=201190 output_bytes=804760

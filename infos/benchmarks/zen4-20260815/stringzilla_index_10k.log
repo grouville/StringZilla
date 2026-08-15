@@ -1,0 +1,9 @@
+names=370105 nodes=1027810 edges=1027809 bytes=16444952 build=0.0484286s
+fastss entries=3774912 bytes=15099648 build=0.226587s
+k=1 fastss 0.00542261s matches=9103 output_bytes=36412
+k=1 fastss 0.00323256s matches=9103 output_bytes=36412
+k=1 fastss 0.00301667s matches=9103 output_bytes=36412
+fastss2split entries=19234970 unique_hashes=15934531 bytes=76939880 build=1.33063s
+k=2 fastss 0.0533676s matches=201190 output_bytes=804760
+k=2 fastss 0.046407s matches=201190 output_bytes=804760
+k=2 fastss 0.0461185s matches=201190 output_bytes=804760

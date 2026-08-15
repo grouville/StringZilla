@@ -1,0 +1,12 @@
+agreement k=2: OK (250000 cells)
+random    k=1: szs 1c   82.7M  8t  634.5M | cdist 1c  165.2M  8t  912.7M | per-core 0.50x  all-core 0.70x
+random    k=2: szs 1c   60.5M  8t  415.2M | cdist 1c  219.1M  8t  911.1M | per-core 0.28x  all-core 0.46x
+random    k=3: szs 1c   49.2M  8t  334.0M | cdist 1c  221.7M  8t  846.7M | per-core 0.22x  all-core 0.39x
+agreement k=2: OK (250000 cells)
+equallen  k=1: szs 1c   98.5M  8t  580.3M | cdist 1c  226.8M  8t  993.3M | per-core 0.43x  all-core 0.58x
+equallen  k=2: szs 1c   89.4M  8t  541.1M | cdist 1c  225.3M  8t  908.3M | per-core 0.40x  all-core 0.60x
+equallen  k=3: szs 1c   64.1M  8t  508.5M | cdist 1c  228.8M  8t  930.4M | per-core 0.28x  all-core 0.55x
+agreement k=2: OK (250000 cells)
+accepts   k=1: szs 1c   96.9M  8t  643.4M | cdist 1c  222.3M  8t  902.5M | per-core 0.44x  all-core 0.71x
+accepts   k=2: szs 1c   59.8M  8t  410.3M | cdist 1c  217.7M  8t  877.7M | per-core 0.27x  all-core 0.47x
+accepts   k=3: szs 1c   48.3M  8t  325.3M | cdist 1c  221.1M  8t  949.9M | per-core 0.22x  all-core 0.34x

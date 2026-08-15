@@ -1,0 +1,11 @@
+Already on 'levenshtein-within-k-simd'
+Your branch is behind 'origin/levenshtein-within-k-simd' by 1 commit, and can be fast-forwarded.
+  (use "git pull" to update your local branch)
+Updating 6523fe66..39745be3
+Fast-forward
+ include/stringzillas/similarities/haswell.hpp | 49 ++++++++++++------
+ include/stringzillas/similarities/icelake.hpp | 71 ++++++++++++++++++---------
+ 2 files changed, 82 insertions(+), 38 deletions(-)
+OK: exhaustive sweep, 715275 checks over 255 strings
+OK: 3859165240 batch checks (1313220640 accepted, 34.0%) over 1000000 random collections [long strings]
+ZEN4_FUZZ_OK
