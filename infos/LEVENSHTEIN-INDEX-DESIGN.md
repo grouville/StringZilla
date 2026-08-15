@@ -158,6 +158,25 @@ that the latency win was not purchased with a larger process footprint. SymSpell
 sorting required by its public lookup API while StringZilla reuses caller-owned scratch; both are real API costs and
 the distinction must remain visible in claims.
 
+The immutable index also permits independent readers without locks. A matched parallel harness assigns queries in a
+deterministic stride to one reusable scratch/result pair per worker. Worker creation is included but amortized over 20
+complete query batches at `k=1` and five at `k=2`. On the six-core/twelve-thread host, three-repeat medians were:
+
+| Workers | StringZilla `k=1` | SymSpell `k=1` | Speedup | StringZilla `k=2` | SymSpell `k=2` | Speedup |
+|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 1.985 ms | 21.155 ms | 10.66x | 41.260 ms | 464.799 ms | 11.27x |
+| 2 | 1.043 ms | 11.376 ms | 10.91x | 21.571 ms | 237.256 ms | 11.00x |
+| 3 | 0.811 ms | 7.591 ms | 9.36x | 14.595 ms | 160.753 ms | 11.01x |
+| 6 physical | 0.427 ms | 3.989 ms | 9.34x | 7.752 ms | 81.313 ms | 10.49x |
+| 12 SMT | 0.263 ms | 3.049 ms | 11.59x | 5.907 ms | 55.986 ms | 9.48x |
+
+StringZilla scales 7.54x/6.98x from one to twelve workers at `k=1/2`; SymSpell scales 6.94x/8.30x. The result is
+order-of-magnitude class across the curve, but not strictly above 10x in every cell. In particular, SymSpell's better
+full-SMT `k=2` scaling narrows the lead below the headline threshold. Five-repeat reruns placed that final cell between
+9.48x and 9.87x, so it must not be rounded up. All cells retained the validated 9,103/201,190 match totals. The public
+C/C++ API already supports this one-search-handle-per-reader model; a convenient batch/pool wrapper for C and Python
+remains release work.
+
 ## StringWars relationship
 
 StringWars' existing similarity categories are valid dense matrix workloads; immutable-dictionary retrieval is a
@@ -251,6 +270,8 @@ and evidence that it improves the Pareto frontier of query time, construction ti
 The headline target is at least 10x lower steady-state query latency than native RapidFuzz cached/process search on
 representative repeated-query immutable-dictionary workloads with byte-for-byte identical per-query ID sets. The
 English `k=1/2` runs now also clear 10x against the pinned official SymSpell-Rust implementation under an exact-result
-filter. Tantivy, Lucene, FastSS, other compact tries/FSTs, and BK-trees remain useful independent indexed baselines. A
-broad SOTA claim still requires multiple public/downstream corpora, cold and cache-stress runs, RSS, construction
-amortization, natural Unicode, parallel scaling, and adversarial length/hit-rate distributions.
+filter in serial execution, while the full-SMT `k=2` comparison currently lands just below 10x. Tantivy, Lucene,
+FastSS, other compact tries/FSTs, and BK-trees remain useful independent indexed baselines. A broad SOTA claim still
+requires multiple public/downstream corpora, cold and cache-stress runs, construction amortization, natural Unicode,
+additional hardware, and adversarial length/hit-rate distributions; RSS and first-host parallel scaling are now
+recorded but need independent-machine confirmation.

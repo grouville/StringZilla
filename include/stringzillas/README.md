@@ -220,8 +220,8 @@ szs_levenshtein_index_free(index);
 ```
 
 Passing `SZ_SIZE_MAX` selects deletion-neighborhood indexing for short dictionaries and radix-trie automata when
-deletion expansion would be excessive. The current API is byte-level; valid-UTF-8/codepoint retrieval will use a
-separate explicitly named engine.
+deletion expansion would be excessive. The names above have byte semantics. Use the separately named
+`szs_levenshtein_index_utf8_*` API when edits must be measured over validated Unicode codepoints.
 
 ## Alignment Scores
 

@@ -71,6 +71,31 @@ fn search(
     matches
 }
 
+fn search_slice(
+    symspell: &SymSpell,
+    ids: &HashMap<String, u32>,
+    queries: &[String],
+    bound: usize,
+    batches: usize,
+    first: usize,
+    stride: usize,
+) -> (usize, u64) {
+    let mut matches_count = 0usize;
+    let mut checksum = 0u64;
+    for _ in 0..batches {
+        for query in queries.iter().skip(first).step_by(stride) {
+            for found in search(symspell, ids, query, bound) {
+                matches_count += 1;
+                checksum = checksum.wrapping_add(
+                    ((found.id as u64) << 8 | found.distance as u64)
+                        .wrapping_mul(0x9E37_79B1_85EB_CA87),
+                );
+            }
+        }
+    }
+    (matches_count, checksum)
+}
+
 fn dump_matches(
     symspell: &SymSpell,
     ids: &HashMap<String, u32>,
@@ -118,8 +143,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
     let repeats = env::var("SYMSPELL_REPEATS").map_or(Ok(3), |value| value.parse::<usize>())?;
-    if repeats == 0 {
-        return Err("SYMSPELL_REPEATS must be positive".into());
+    let threads = env::var("SYMSPELL_THREADS").map_or(Ok(1), |value| value.parse::<usize>())?;
+    let batches =
+        env::var("SYMSPELL_BATCHES_PER_REPEAT").map_or(Ok(1), |value| value.parse::<usize>())?;
+    if repeats == 0 || threads == 0 || batches == 0 {
+        return Err(
+            "SYMSPELL_REPEATS, SYMSPELL_THREADS, and SYMSPELL_BATCHES_PER_REPEAT must be positive"
+                .into(),
+        );
     }
     let min_distance =
         env::var("SYMSPELL_MIN_DISTANCE").map_or(Ok(1), |value| value.parse::<usize>())?;
@@ -156,20 +187,38 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
         for repeat in 0..repeats {
             let start = Instant::now();
-            let mut matches_count = 0usize;
-            let mut checksum = 0u64;
-            for query in &queries {
-                for found in search(&symspell, &ids, query, bound) {
-                    matches_count += 1;
-                    checksum = checksum
-                        .wrapping_mul(0x9E37_79B1_85EB_CA87)
-                        .wrapping_add(found.id as u64)
-                        .wrapping_add(found.distance as u64);
-                }
-            }
+            let (matches_count, checksum) = if threads == 1 {
+                search_slice(&symspell, &ids, &queries, bound, batches, 0, 1)
+            } else {
+                std::thread::scope(|scope| {
+                    let mut workers = Vec::with_capacity(threads);
+                    for thread in 0..threads {
+                        let symspell_ref = &symspell;
+                        let ids_ref = &ids;
+                        let queries_ref = &queries;
+                        workers.push(scope.spawn(move || {
+                            search_slice(
+                                symspell_ref,
+                                ids_ref,
+                                queries_ref,
+                                bound,
+                                batches,
+                                thread,
+                                threads,
+                            )
+                        }));
+                    }
+                    workers.into_iter().fold((0usize, 0u64), |total, worker| {
+                        let partial = worker.join().expect("SymSpell benchmark worker panicked");
+                        (total.0 + partial.0, total.1.wrapping_add(partial.1))
+                    })
+                })
+            };
             println!(
-                "k={bound} repeat={repeat} query={:.6}s matches={matches_count} checksum={checksum:016x}",
-                start.elapsed().as_secs_f64()
+                "k={bound} repeat={repeat} query={:.6}s matches={} checksum={:016x} threads={threads} batches={batches}",
+                start.elapsed().as_secs_f64() / batches as f64,
+                matches_count / batches,
+                checksum,
             );
         }
         if let Some(prefix) = dump_prefix {
