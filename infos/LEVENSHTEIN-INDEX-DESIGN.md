@@ -64,10 +64,50 @@ layout. It does establish that the result is algorithmic rather than an AVX-512-
 performance claim is currently justified. Randomized repeated captures on independent AVX2, Intel AVX-512, and Arm
 machines remain part of the release gate.
 
+An independent Rust `fst` 0.4.7 comparison used `fst::Map` and its official Unicode Levenshtein automaton on the same
+ASCII corpus, where Unicode-scalar and byte semantics coincide. This comparison is deliberately favorable to `fst`:
+it returns dictionary IDs without distances, while StringZilla materializes both. The FST occupied 2,041,719 bytes and
+built in 47.9 ms. Its default 10,000-state safety limit refused `k=3/4`; raising the limit to one million states produced
+the following one-pass results:
+
+| Bound | StringZilla | Rust `fst` | StringZilla speedup |
+|---:|---:|---:|---:|
+| 1 | 3.078 ms | 0.866 s | 281x |
+| 2 | 45.483 ms | 5.469 s | 120x |
+| 3 | 5.461 s | 62.284 s | 11.4x |
+| 4 | 16.223 s | 226.019 s | 13.9x |
+
+The raised-limit `fst` process peaked at 451,024 KiB RSS. The corresponding StringZilla process peaked at 254,500 KiB
+while sequentially constructing and benchmarking its `k=1`, `k=2`, and `k=4` indexes; persistent `k=4` index plus
+owned-dictionary storage was 113,737,588 bytes. Match counts agreed at every bound. Exact set comparison is still
+required for this independent implementation; the stronger byte-for-byte ID-and-distance gate above applies to
+RapidFuzz. The checked-in Rust harness rejects non-ASCII inputs rather than silently comparing different semantics.
+
 The deletion index stores every residual produced by deleting `0..k` symbols, not exactly `k`: the latter cannot
 join unequal-length strings by a common residual. A 20-bit directory supplies the high hash bits. Dictionaries below
 `2^20` entries use packed 32-bit records (`12-bit hash suffix + 20-bit ID`); larger dictionaries require a wide
 record representation rather than truncation. Hash collisions only add verifier work and can never change results.
+
+## Literature position
+
+This work combines established algorithmic families; performance alone does not make either family novel:
+
+- `k=1..2` is a deletion-neighborhood index in the [FastSS](https://arxiv.org/abs/1008.1191) family. Its production
+  contributions are exact residual coverage for unequal lengths, packed ID/hash records, a radix directory, collision
+  verification, duplicate-ID semantics, reusable scratch, and the measured boundary where deletion expansion stops.
+- `k>2` follows the trie/FST intersection strategy of Schulz and Mihov's
+  [Levenshtein automata](https://doi.org/10.1007/s10032-002-0082-8). The current implementation represents a clipped
+  DP row in one integer and lazily memoizes only the `(row state, byte)` transitions reached while traversing the
+  dictionary trie. Lucene's parametric DFA and Rust `fst` are production representatives that must remain in the
+  comparison matrix.
+- Approximate nearest-neighbor and streaming edit-distance results solve materially different contracts. They are
+  relevant background, but cannot establish or refute SOTA for complete exact immutable-dictionary retrieval.
+
+The defensible research hypothesis is the adaptive exact hybrid and its concrete representations: choose deletion
+neighborhoods only where their expansion is cheaper than automaton/trie traversal, then choose a state representation
+using query length, bound, alphabet, and trie shape. To claim a literature contribution rather than an engineering
+contribution, that policy needs an explicit cost model, independent datasets, ablations of every representation choice,
+and evidence that it improves the Pareto frontier of query time, construction time, and memory.
 
 ## Claim gate
 
