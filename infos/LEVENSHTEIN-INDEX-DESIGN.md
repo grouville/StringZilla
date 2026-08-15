@@ -2,7 +2,7 @@
 
 Production design for issue #243. Experimental evidence remains on branch
 `levenshtein-within-k-simd` through commit `ab6b6020`; this branch starts from the validated bounded verifier at
-`39745be3` and does not depend on the later AVX-512 experiment.
+`1b0142eb` and does not depend on the later AVX-512 experiment.
 
 ## Contract
 
@@ -235,7 +235,7 @@ different sparse-output category and should not replace them. The first experime
 work branch reused different random inputs across competitors, mixed byte and text semantics, compared different
 matrix sizes and thread counts, and labelled raw cutoff distances as though they were boolean membership. Those were
 our extension's errors, not defects in Ash's pre-existing suite. The corrected branch is preserved at
-[`grouville/StringWars@1f81925`](https://github.com/grouville/StringWars/commit/1f81925): it uses identical deterministic
+[`grouville/StringWars@37971bd`](https://github.com/grouville/StringWars/commit/37971bd): it uses identical deterministic
 inputs, verifies every 512-by-512 matrix against a byte-level RapidFuzz oracle, separates random/sparse/dense
 selectivity, matches matrix side and CPU scope, and labels allocation-inclusive, caller-buffer, raw-distance, and
 boolean outputs separately.

@@ -197,7 +197,7 @@ The final server run checked 2,359,296 cells with zero mismatches. In matched on
 Boolean operation was 1.21x to 2.50x faster than RapidFuzz across `k=1`, `k=2`, and `k=4`.
 
 The work is in [StringWars #9](https://github.com/ashvardanian/StringWars/pull/9) and commit
-[`1f81925`](https://github.com/grouville/StringWars/commit/1f81925). These direct comparison results are separate
+[`37971bd`](https://github.com/grouville/StringWars/commit/37971bd). These direct comparison results are separate
 from the larger reusable-index results above.
 
 #### Other tools

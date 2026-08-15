@@ -11,7 +11,7 @@ The logs preserve experimentation, including failed or superseded runs:
 - `sweep_*.log`: compiler-target and workload sweeps.
 - `k9_remeasure.log`: high-bound exploratory remeasurement.
 - `within_k_bench.patch`: exact StringWars working patch copied from the server; the reviewed equivalent is pushed at
-  [`grouville/StringWars@1f81925`](https://github.com/grouville/StringWars/commit/1f81925).
+  [`grouville/StringWars@37971bd`](https://github.com/grouville/StringWars/commit/37971bd).
 
 Use the final tables and caveats in `../../LEVENSHTEIN-INDEX-DESIGN.md`. In particular, portable x86-64,
 Haswell/AVX2, and native AVX-512 were compiler targets on this one AMD host, not independent architectures.

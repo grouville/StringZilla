@@ -6,7 +6,7 @@
 - compiler: GCC 13.3.0
 - flags: `-O3 -DNDEBUG -std=c++20 -march=haswell -mtune=haswell`
 - affinity: `taskset -c 2`
-- StringZilla commit: `6a16d64f`
+- StringZilla measured commit: `6a16d64f`, tree-equivalent to signed commit `e7306662`
 - RapidFuzz commit: `b5830af53bd1b3c7460a8de1e9f7095df99b3470`
 - dictionary: 370,105 lines, SHA-256 `3ed0c94610d8bcf7c11bbb49c56aa49c7234d32b66824df91f554169e572da48`
 - queries: current checked-in generator, 10,000 `mixed` queries, seed 243, SHA-256
