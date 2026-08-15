@@ -57,6 +57,25 @@ class levenshtein_index {
         u32_t end_edge = 0;
         u32_t depth = 0;
     };
+    struct dfa_frame_t {
+        u64_t state = 0;
+        u32_t node = 0;
+        u32_t next_edge = 0;
+        u32_t end_edge = 0;
+    };
+    struct dfa_transition_t {
+        u64_t state = 0;
+        u64_t next_state = 0;
+        u32_t generation = 0;
+        u8_t symbol = 0;
+        u8_t min_distance = 0;
+        u8_t terminal_distance = 0;
+    };
+    struct dfa_step_t {
+        u64_t state = 0;
+        u8_t min_distance = 0;
+        u8_t terminal_distance = 0;
+    };
 
     template <typename value_type_>
     using rebound_allocator_t =
@@ -306,9 +325,120 @@ class levenshtein_index {
     }
 
     template <typename scratch_type_>
+    status_t find_trie_dfa_(span<char const> query, u8_t bound, bool fallback_only, scratch_type_ &scratch,
+                            vector_t<match_t> &matches) const noexcept {
+        static constexpr size_t transitions_capacity = size_t(1) << 15;
+        static constexpr size_t transitions_mask = transitions_capacity - 1;
+        if (scratch.dfa_transitions.size() != transitions_capacity) {
+            if (scratch.dfa_transitions.try_resize(transitions_capacity) != status_t::success_k)
+                return status_t::bad_alloc_k;
+            for (auto &entry : scratch.dfa_transitions) entry.generation = 0;
+            scratch.dfa_generation = 0;
+        }
+        if (++scratch.dfa_generation == 0) {
+            for (auto &entry : scratch.dfa_transitions) entry.generation = 0;
+            scratch.dfa_generation = 1;
+        }
+        if (scratch.dfa_frames.try_resize(0) != status_t::success_k ||
+            scratch.dfa_frames.try_reserve(max_word_length_ + 1) != status_t::success_k)
+            return status_t::bad_alloc_k;
+        u8_t const cap = bound + 1;
+
+        auto const emit_terminals = [&](u32_t node_id, u8_t distance) noexcept -> status_t {
+            trie_node_t const &node = trie_nodes_[node_id];
+            for (size_t offset = node.first_terminal; offset != node.first_terminal + node.terminals_count; ++offset) {
+                u32_t const id = trie_terminals_[offset];
+                if (fallback_only && word_(id).size() <= deletion_max_word_length_) continue;
+                if (status_t status = matches.try_push_back(match_t {id, distance});
+                    status != status_t::success_k)
+                    return status;
+            }
+            return status_t::success_k;
+        };
+        auto const compute_transition = [&](u64_t state, u8_t symbol) noexcept {
+            u64_t next = (state & 0xF) < cap ? (state & 0xF) + 1 : cap;
+            u8_t left = static_cast<u8_t>(next & 0xF);
+            u8_t diagonal = static_cast<u8_t>(state & 0xF);
+            u8_t min_distance = left;
+            for (size_t column = 1; column <= query.size(); ++column) {
+                u8_t const above = static_cast<u8_t>((state >> (column * 4)) & 0xF);
+                unsigned const value = std::min({unsigned(above) + 1, unsigned(left) + 1,
+                                                 unsigned(diagonal) +
+                                                     (static_cast<u8_t>(query[column - 1]) != symbol),
+                                                 unsigned(cap)});
+                left = static_cast<u8_t>(value);
+                min_distance = sz_min_of_two(min_distance, left);
+                diagonal = above;
+                next |= u64_t(left) << (column * 4);
+            }
+            return dfa_step_t {next, min_distance, left};
+        };
+        auto const transition = [&](u64_t state, u8_t symbol) noexcept {
+            u64_t mixed = state ^ (u64_t(symbol) * 0x9E3779B185EBCA87ull);
+            mixed ^= mixed >> 33;
+            mixed *= 0xff51afd7ed558ccdull;
+            mixed ^= mixed >> 33;
+            size_t slot = static_cast<size_t>(mixed) & transitions_mask;
+            for (size_t probe = 0; probe != transitions_capacity; ++probe) {
+                dfa_transition_t &entry = scratch.dfa_transitions[slot];
+                if (entry.generation != scratch.dfa_generation) {
+                    entry.state = state;
+                    entry.symbol = symbol;
+                    dfa_step_t const step = compute_transition(state, symbol);
+                    entry.next_state = step.state;
+                    entry.min_distance = step.min_distance;
+                    entry.terminal_distance = step.terminal_distance;
+                    entry.generation = scratch.dfa_generation;
+                    return step;
+                }
+                if (entry.state == state && entry.symbol == symbol)
+                    return dfa_step_t {entry.next_state, entry.min_distance, entry.terminal_distance};
+                slot = (slot + 1) & transitions_mask;
+            }
+            return compute_transition(state, symbol);
+        };
+
+        u64_t initial_state = 0;
+        for (size_t column = 0; column <= query.size(); ++column)
+            initial_state |= u64_t(sz_min_of_two(column, size_t(cap))) << (column * 4);
+        u8_t const initial_distance = static_cast<u8_t>((initial_state >> (query.size() * 4)) & 0xF);
+        if (initial_distance <= bound && trie_nodes_[0].terminals_count)
+            if (status_t status = emit_terminals(0, initial_distance); status != status_t::success_k) return status;
+
+        trie_node_t const &root = trie_nodes_[0];
+        if (scratch.dfa_frames.try_push_back(
+                dfa_frame_t {initial_state, 0, root.first_edge, root.first_edge + root.edges_count}) !=
+            status_t::success_k)
+            return status_t::bad_alloc_k;
+        while (scratch.dfa_frames.size()) {
+            dfa_frame_t &frame = scratch.dfa_frames.back();
+            if (frame.next_edge == frame.end_edge) {
+                scratch.dfa_frames.try_resize(scratch.dfa_frames.size() - 1);
+                continue;
+            }
+            trie_edge_t const edge = trie_edges_[frame.next_edge++];
+            dfa_step_t const step = transition(frame.state, edge.symbol);
+            trie_node_t const &child = trie_nodes_[edge.child];
+            if (step.terminal_distance <= bound && child.terminals_count)
+                if (status_t status = emit_terminals(edge.child, step.terminal_distance);
+                    status != status_t::success_k)
+                    return status;
+            if (step.min_distance <= bound) {
+                if (scratch.dfa_frames.try_push_back(
+                        dfa_frame_t {step.state, edge.child, child.first_edge,
+                                     child.first_edge + child.edges_count}) !=
+                    status_t::success_k)
+                    return status_t::bad_alloc_k;
+            }
+        }
+        return status_t::success_k;
+    }
+
+    template <typename scratch_type_>
     status_t find_trie_(span<char const> query, u8_t bound, bool fallback_only, scratch_type_ &scratch,
                         vector_t<match_t> &matches) const noexcept {
         if (!trie_nodes_.size()) return status_t::success_k;
+        if (query.size() <= 15 && bound <= 14) return find_trie_dfa_(query, bound, fallback_only, scratch, matches);
         size_t const stride = size_t(2) * bound + 3;
         if (max_word_length_ + 1 > std::numeric_limits<size_t>::max() / stride)
             return status_t::overflow_risk_k;
@@ -477,12 +607,15 @@ class levenshtein_index {
         vector_t<u8_t> dp_rows;
         vector_t<u16_t> trie_rows;
         vector_t<trie_frame_t> trie_frames;
+        vector_t<dfa_transition_t> dfa_transitions;
+        vector_t<dfa_frame_t> dfa_frames;
         u32_t generation = 0;
+        u32_t dfa_generation = 0;
 
       public:
         explicit scratch_t(allocator_t alloc = {}) noexcept
             : generations(alloc), residuals(alloc), prefixes(alloc), powers(alloc), dp_rows(alloc), trie_rows(alloc),
-              trie_frames(alloc) {}
+              trie_frames(alloc), dfa_transitions(alloc), dfa_frames(alloc) {}
     };
 
     using matches_t = vector_t<match_t>;
