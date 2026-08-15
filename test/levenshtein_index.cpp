@@ -10,7 +10,8 @@
 namespace szs = ashvardanian::stringzillas;
 namespace sz = ashvardanian::stringzilla;
 
-static std::size_t distance(std::string const &first, std::string const &second) {
+template <typename string_type_>
+static std::size_t distance(string_type_ const &first, string_type_ const &second) {
     std::vector<std::size_t> previous(first.size() + 1), current(first.size() + 1);
     for (std::size_t column = 0; column <= first.size(); ++column) previous[column] = column;
     for (std::size_t row = 1; row <= second.size(); ++row) {
@@ -103,6 +104,60 @@ int main() {
             sz::status_t::success_k ||
         matches.size() != 1 || matches[0].id != 0 || matches[0].distance != 0)
         return 9;
+
+    // Exhaust the same machinery over a mixed-width Unicode alphabet, including duplicate IDs.
+    char32_t const unicode_alphabet[] = {U'a', U'咖', U'🦖'};
+    std::vector<std::u32string> unicode_dictionary;
+    for (std::size_t length = 0, combinations = 1; length <= 5; ++length, combinations *= 3)
+        for (std::size_t encoded = 0; encoded != combinations; ++encoded) {
+            std::u32string word(length, U'\0');
+            std::size_t digits = encoded;
+            for (std::size_t position = 0; position != length; ++position, digits /= 3)
+                word[position] = unicode_alphabet[digits % 3];
+            unicode_dictionary.push_back(std::move(word));
+        }
+    unicode_dictionary.push_back(unicode_dictionary[42]);
+    szs::basic_levenshtein_index<char32_t> unicode_index;
+    if (unicode_index.try_build(unicode_dictionary, 4) != sz::status_t::success_k) return 10;
+    szs::basic_levenshtein_index<char32_t>::scratch_t unicode_scratch;
+    szs::basic_levenshtein_index<char32_t>::matches_t unicode_matches;
+    for (auto const &query : unicode_dictionary)
+        for (std::uint8_t bound = 0; bound <= 4; ++bound) {
+            if (unicode_index.find({query.data(), query.size()}, bound, unicode_scratch, unicode_matches) !=
+                sz::status_t::success_k)
+                return 11;
+            std::vector<std::pair<std::uint32_t, std::uint8_t>> actual, expected;
+            for (auto const &match : unicode_matches) actual.emplace_back(match.id, match.distance);
+            for (std::uint32_t id = 0; id != unicode_dictionary.size(); ++id) {
+                std::size_t const score = distance(unicode_dictionary[id], query);
+                if (score <= bound) expected.emplace_back(id, static_cast<std::uint8_t>(score));
+                ++checks;
+            }
+            std::sort(actual.begin(), actual.end());
+            if (actual != expected) return 12;
+        }
+
+    // The UTF-8 facade validates once and measures edits in codepoints, unlike the byte index.
+    std::vector<std::string> utf8_dictionary = {"caf\xC3\xA9", "cafe", "\xE5\x92\x96\xE5\x95\xA1",
+                                                "\xE5\x92\x96\xE9\x9D\x9E", "\xF0\x9F\xA6\x96zilla",
+                                                "caf\xC3\xA9"};
+    szs::levenshtein_index_utf8<> utf8_index;
+    if (utf8_index.try_build(utf8_dictionary, 4) != sz::status_t::success_k) return 13;
+    szs::levenshtein_index_utf8<>::scratch_t utf8_scratch;
+    szs::levenshtein_index_utf8<>::matches_t utf8_matches;
+    std::string const coffee_query = "\xE5\x92\x96\xE5\x95\xA1";
+    if (utf8_index.find({coffee_query.data(), coffee_query.size()}, 1, utf8_scratch, utf8_matches) !=
+            sz::status_t::success_k ||
+        utf8_matches.size() != 2)
+        return 14;
+    std::string const malformed = "\xF0\x9F";
+    if (utf8_index.find({malformed.data(), malformed.size()}, 1, utf8_scratch, utf8_matches) !=
+            sz::status_t::invalid_utf8_k ||
+        utf8_matches.size() != 0)
+        return 15;
+    std::vector<std::string> malformed_dictionary = {"valid", malformed};
+    if (utf8_index.try_build(malformed_dictionary, 2) != sz::status_t::invalid_utf8_k || utf8_index.size() != 6)
+        return 16;
     std::cout << "OK: " << checks << " exhaustive memberships, records=" << index.records_count()
               << " index_bytes=" << index.index_bytes() << '\n';
 }

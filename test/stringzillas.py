@@ -49,6 +49,21 @@ def test_library_properties():
     sz.reset_capabilities(szs.__capabilities__)  # Should not raise
 
 
+def test_levenshtein_indexes_byte_and_utf8_semantics():
+    """Sparse indexes preserve duplicate IDs and expose byte/codepoint semantics as distinct classes."""
+    words = ["café", "cafe", "咖啡", "咖非", "café"]
+    byte_index = szs.LevenshteinIndex(words, max_distance=2)
+    utf8_index = szs.LevenshteinIndexUTF8(Strs(words), max_distance=2)
+
+    assert sorted(byte_index("cafe", bound=1)) == [(1, 0)]
+    assert sorted(utf8_index("cafe", bound=1)) == [(0, 1), (1, 0), (4, 1)]
+    assert sorted(utf8_index("咖啡", bound=1)) == [(2, 0), (3, 1)]
+    with pytest.raises(ValueError):
+        utf8_index(b"\xf0\x9f", bound=1)
+    with pytest.raises(ValueError):
+        szs.LevenshteinIndexUTF8([b"valid", b"\xf0\x9f"])
+
+
 def test_device_scope():
     """`DeviceScope` accepts a default scope, `cpu_cores` in {0, 1, N}, and `gpu_device` where CUDA
     is available, and rejects non-numeric arguments and specifying both at once."""

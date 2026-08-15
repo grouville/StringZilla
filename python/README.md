@@ -508,7 +508,7 @@ utf8_engine = szs.LevenshteinDistancesUTF8(mismatch=5)
 utf8_engine(sz.Strs(["café", "naïve"]), sz.Strs(["caffe", "naive"]))
 ```
 
-### `LevenshteinIndex`
+### `LevenshteinIndex` and `LevenshteinIndexUTF8`
 
 `LevenshteinIndex(dictionary, max_distance=2, deletion_max_word_length=None)` copies an immutable dictionary for
 repeated exact fuzzy retrieval. Calling `index(query, bound=None)` returns an unordered list of
@@ -521,7 +521,13 @@ assert sorted(index(b"cook", bound=1)) == [(0, 1), (2, 1)]
 ```
 
 This class compares encoded bytes. Use `LevenshteinDistancesUTF8` when codepoint semantics are required; a sparse
-UTF-8 dictionary index is not exposed yet.
+UTF-8 dictionary index is exposed separately as `LevenshteinIndexUTF8`. It validates the dictionary at construction,
+validates every query, and counts Unicode codepoints rather than grapheme clusters:
+
+```python
+index_utf8 = szs.LevenshteinIndexUTF8(["café", "cafe", "咖啡", "咖非"], max_distance=2)
+assert sorted(index_utf8("咖啡", bound=1)) == [(2, 0), (3, 1)]
+```
 
 ### `NeedlemanWunschScores` and `SmithWatermanScores`
 

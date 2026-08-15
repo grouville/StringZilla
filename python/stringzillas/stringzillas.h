@@ -131,6 +131,7 @@ extern PyTypeObject DeviceScopeType;
 extern PyTypeObject LevenshteinDistancesType;
 extern PyTypeObject LevenshteinWithinKType;
 extern PyTypeObject LevenshteinIndexType;
+extern PyTypeObject LevenshteinIndexUTF8Type;
 extern PyTypeObject LevenshteinDistancesUTF8Type;
 extern PyTypeObject NeedlemanWunschType;
 extern PyTypeObject SmithWatermanType;

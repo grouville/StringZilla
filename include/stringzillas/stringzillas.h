@@ -394,6 +394,55 @@ SZ_API_RUNTIME void szs_levenshtein_index_search_free(szs_levenshtein_index_sear
 /** @brief Free an immutable dictionary index. Search handles must be freed first. */
 SZ_API_RUNTIME void szs_levenshtein_index_free(szs_levenshtein_index_t index);
 
+/*  UTF-8/codepoint counterpart of the byte index above. Inputs must be well-formed UTF-8; malformed dictionary or
+ *  query strings return `sz_invalid_utf8_k`. Separately named handles make the intended semantics explicit.
+ */
+typedef void *szs_levenshtein_index_utf8_t;
+typedef void *szs_levenshtein_index_utf8_search_t;
+
+/**
+ *  @brief Build an exact immutable Levenshtein index whose edit unit is one Unicode codepoint.
+ *  @param[in] deletion_max_word_length Maximum decoded codepoint length indexed through deletion neighborhoods, or
+ *             `SZ_SIZE_MAX` to select the deletion/radix-trie representation automatically.
+ */
+SZ_API_RUNTIME sz_status_t szs_levenshtein_index_utf8_init(       //
+    sz_sequence_t const *dictionary, sz_size_t max_distance,     //
+    sz_size_t deletion_max_word_length,                          //
+    sz_memory_allocator_t const *alloc,                          //
+    szs_levenshtein_index_utf8_t *index, char const **error_message);
+
+/** @copydoc szs_levenshtein_index_utf8_init */
+SZ_API_RUNTIME sz_status_t szs_levenshtein_index_utf8_init_u32tape( //
+    sz_sequence_u32tape_t const *dictionary, sz_size_t max_distance, //
+    sz_size_t deletion_max_word_length,                              //
+    sz_memory_allocator_t const *alloc,                              //
+    szs_levenshtein_index_utf8_t *index, char const **error_message);
+
+/** @copydoc szs_levenshtein_index_utf8_init */
+SZ_API_RUNTIME sz_status_t szs_levenshtein_index_utf8_init_u64tape( //
+    sz_sequence_u64tape_t const *dictionary, sz_size_t max_distance, //
+    sz_size_t deletion_max_word_length,                              //
+    sz_memory_allocator_t const *alloc,                              //
+    szs_levenshtein_index_utf8_t *index, char const **error_message);
+
+/** @brief Allocate reusable query-local state for one UTF-8/codepoint search thread. */
+SZ_API_RUNTIME sz_status_t szs_levenshtein_index_utf8_search_init( //
+    szs_levenshtein_index_utf8_t index,                            //
+    szs_levenshtein_index_utf8_search_t *search, char const **error_message);
+
+/** @brief Retrieve every dictionary entry within @p bound codepoint edits of one validated UTF-8 string. */
+SZ_API_RUNTIME sz_status_t szs_levenshtein_index_utf8_find(                    //
+    szs_levenshtein_index_utf8_t index, szs_levenshtein_index_utf8_search_t search, //
+    sz_cptr_t query, sz_size_t query_length, sz_size_t bound,                        //
+    szs_levenshtein_index_match_t const **matches, sz_size_t *matches_count,         //
+    char const **error_message);
+
+/** @brief Free one reusable UTF-8 search handle. */
+SZ_API_RUNTIME void szs_levenshtein_index_utf8_search_free(szs_levenshtein_index_utf8_search_t search);
+
+/** @brief Free an immutable UTF-8 dictionary index. Search handles must be freed first. */
+SZ_API_RUNTIME void szs_levenshtein_index_utf8_free(szs_levenshtein_index_utf8_t index);
+
 /**
  *  @brief Initialize UTF-8 aware Levenshtein distance engine.
  *
