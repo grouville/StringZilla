@@ -76,9 +76,14 @@ int main(int argc, char **argv) {
     auto const dictionary = load_lines(argv[1]);
     auto const queries = load_lines(argv[2], query_limit);
     int const repeats = std::getenv("RF_REPEATS") ? std::stoi(std::getenv("RF_REPEATS")) : 3;
+    int const max_distance = std::getenv("RF_MAX_DISTANCE") ? std::stoi(std::getenv("RF_MAX_DISTANCE")) : 4;
+    if (max_distance < 1 || max_distance > 4) {
+        std::cerr << "RF_MAX_DISTANCE must be between 1 and 4\n";
+        return 2;
+    }
     std::cout << "dictionary=" << dictionary.size() << " queries=" << queries.size() << '\n';
 
-    for (std::uint8_t bound : {std::uint8_t(1), std::uint8_t(2), std::uint8_t(3), std::uint8_t(4)}) {
+    for (std::uint8_t bound = 1; bound <= max_distance; ++bound) {
         for (int repeat = 0; repeat != repeats; ++repeat) {
             std::size_t matches_count = 0;
             auto const start = std::chrono::steady_clock::now();

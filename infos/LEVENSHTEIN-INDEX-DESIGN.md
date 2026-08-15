@@ -20,14 +20,15 @@ Production design for issue #243. Experimental evidence remains on branch
 | Region | Exact engine | Reason |
 |---|---|---|
 | `k = 0` | exact hash/radix lookup | No fuzzy machinery is needed. |
-| `k = 1..2`, indexed lengths | deletion-neighborhood radix index + exact verifier | Measured headline region; avoids scanning the dictionary. |
+| `k = 1..2`, short dictionaries | deletion-neighborhood radix index + exact verifier | Measured headline region; avoids scanning the dictionary. |
 | `k > 2` | compact trie/FST + banded DP | Avoids the combinatorial deletion-record expansion. |
-| unusually long strings | compact trie/FST or dense bounded verifier | Keeps construction memory bounded without false negatives. |
+| long dictionaries at `k = 1..2` | compact trie + lazy banded-DP automaton | Keeps construction memory bounded without false negatives. |
 
 The first compact-trie banded-DP implementation was exact through `k=4`, but only 4.16x / 1.68x faster than native
-RapidFuzz at `k=3/4`. A query-local lazy DFA now packs each clipped DP row into one u64 for queries through 15 bytes
-and bounds through 14, memoizes only visited `(state, byte)` transitions, and stores row-minimum/terminal-distance
-metadata in each cache entry. On the 370,105-word / 10,000-query persisted corpus it takes 5.460 s at `k=3` and
+RapidFuzz at `k=3/4`. A query-local lazy DFA packs a complete clipped row into one u64 for queries through 15 bytes;
+for longer queries and bounds through seven, it packs only the active `2k+1` band. It memoizes visited transitions
+and stores row-minimum/terminal-distance metadata in each cache entry. On the 370,105-word / 10,000-query persisted
+corpus it takes 5.460 s at `k=3` and
 16.217 s at `k=4`, versus pinned native RapidFuzz cached scans at 57.038 s and 70.840 s: 10.45x and 4.37x. Both return
 3,158,139 and 26,600,296 matches. A 4K-entry direct-mapped cache was 5-9% slower than the 32K linear-probed cache and
 is not retained. Do not project the low-bound ~776-6,300x result onto this region.
@@ -94,6 +95,41 @@ The deletion index stores every residual produced by deleting `0..k` symbols, no
 join unequal-length strings by a common residual. A 20-bit directory supplies the high hash bits. Dictionaries below
 `2^20` entries use packed 32-bit records (`12-bit hash suffix + 20-bit ID`); larger dictionaries require a wide
 record representation rather than truncation. Hash collisions only add verifier work and can never change results.
+
+The default builder now estimates the complete deletion-neighborhood upper bound before allocating it. At no more
+than 80 residuals per dictionary word it indexes every word; above that it uses the trie for the complete dictionary.
+This deliberately simple first cost model correctly separates the three measured regimes below. Callers can still
+provide an explicit maximum indexed word length. A partial index owns a trie containing only fallback words, not a
+second copy of the whole dictionary. The 80-record boundary is an empirical policy, not yet a universal optimum; it
+must be re-fitted or replaced by a calibrated build/query/memory model before a broad SOTA claim.
+
+## Adversarial corpora
+
+Length and alphabet materially change the winning representation, so the English dictionary is not sufficient
+evidence. The latter two deterministic mixed-query corpora below contain equal quarters of exact hits, one-edit
+mutations, two-edit mutations, and length-guaranteed rejects:
+
+| Dictionary / queries | Shape | Auto plan | `k=1` | `k=2` | Tantivy `k=1/2` |
+|:---|:---|:---|---:|---:|---:|
+| English words / 10,000 | 370,105 words, mean 10.44 bytes | deletion / deletion | 2.91 ms | 45.5 ms | 485 ms / 4.183 s |
+| Wikipedia URLs / 10,000 | 97,054 strings, mean 47.85 bytes | deletion / trie | 16.1 ms | 488.5 ms | 480 ms / 2.428 s |
+| four-symbol DNA / 1,000 | 100,000 strings, exactly 100 bytes | trie / trie | 14.9 ms | 162.7 ms | 52.7 ms / 282.3 ms |
+
+The URL dictionary is Rust `fst` 0.4.7's bundled `wiki-urls-100000` file (97,054 actual lines), SHA-256
+`deb1ba1bb5005621de81bbc498922c5e06d3e7a9cb65b52ef854747a93b7ccc2`; its query file is
+`a508d155b620fba09ac512377fc544ea9f7f79f0b0b118a3818da9db3a0015c2`. StringZilla and RapidFuzz emitted
+byte-identical per-query ID-and-distance streams at both bounds, with SHA-256
+`8a5a7d36199b7f5665beb3ea25e20220097ba23176f441b41dcecc4787733abf` (`k=1`) and
+`c8262d112c4284bbe1bcfbb2c1fd46b66bc3464acd9a35d1fc4128ac65a13f15` (`k=2`).
+
+The DNA dictionary is StringWars `acgt_100.txt`, SHA-256
+`b0df691ddcc7e6db1544db3e472780602b824aff9eafca2efb567e3d10904381`; its query file is
+`ddd6318eb864b98cf7006d80b29fe51ad56ab270653152a14826ca9ba0bd249d`. Exact streams also matched RapidFuzz,
+with SHA-256 `eed6f71598e6848ce5734df1a37e9100ab69550ab3123dcb93870c9407cc750c` (`k=1`) and
+`1e2d9760941311937f2d9360fa14eee8d7cd8c5f12afaf17c260f9885ca5bc4e` (`k=2`). The persistent DNA trie is
+194,456,504 bytes, while Tantivy's complete process peaked near 79 MiB. That memory loss is the clearest current
+production blocker and motivates radix-compressing unary trie paths; latency wins alone do not justify a broad SOTA
+claim.
 
 ## Literature position
 

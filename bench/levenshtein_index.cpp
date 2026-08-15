@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
+#include <cstdlib>
 #include <fstream>
 #include <iostream>
 #include <string>
@@ -62,11 +63,25 @@ int main(int argc, char **argv) {
     auto const dictionary = load_lines(argv[1]);
     auto const queries = load_lines(argv[2], query_limit);
     std::cout << "dictionary=" << dictionary.size() << " queries=" << queries.size() << '\n';
+    char const *deletion_max_length_env = std::getenv("SZ_LEVENSHTEIN_DELETION_MAX_LENGTH");
+    std::size_t const deletion_max_length =
+        deletion_max_length_env ? std::stoull(deletion_max_length_env)
+                                : szs::levenshtein_index<>::automatic_deletion_max_word_length_k;
 
-    for (std::uint8_t max_distance : {std::uint8_t(1), std::uint8_t(2), std::uint8_t(4)}) {
+    std::vector<std::uint8_t> max_distances = {1, 2, 4};
+    if (char const *requested_max = std::getenv("SZ_LEVENSHTEIN_MAX_DISTANCE")) {
+        int const parsed = std::stoi(requested_max);
+        if (parsed != 1 && parsed != 2 && parsed != 4) {
+            std::cerr << "SZ_LEVENSHTEIN_MAX_DISTANCE must be 1, 2, or 4\n";
+            return 2;
+        }
+        max_distances = {static_cast<std::uint8_t>(parsed)};
+    }
+    for (std::uint8_t max_distance : max_distances) {
         szs::levenshtein_index<> index;
         auto const build_start = std::chrono::steady_clock::now();
-        if (sz::status_t status = index.try_build(dictionary, max_distance); status != sz::status_t::success_k) {
+        if (sz::status_t status = index.try_build(dictionary, max_distance, deletion_max_length);
+            status != sz::status_t::success_k) {
             std::cerr << "build failed: " << int(status) << '\n';
             return 3;
         }
@@ -75,7 +90,7 @@ int main(int argc, char **argv) {
         std::cout << "k=" << unsigned(max_distance) << " build=" << build_seconds
                   << "s records=" << index.records_count() << " index_bytes=" << index.index_bytes()
                   << " trie_bytes=" << index.trie_bytes() << " dictionary_bytes=" << index.dictionary_bytes()
-                  << '\n';
+                  << " deletion_max_length=" << index.deletion_max_word_length() << '\n';
 
         szs::levenshtein_index<>::scratch_t scratch;
         szs::levenshtein_index<>::matches_t matches;

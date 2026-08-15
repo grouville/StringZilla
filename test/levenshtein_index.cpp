@@ -77,9 +77,9 @@ int main() {
     for (auto &worker : workers) worker.join();
     if (!concurrent_ok[0] || !concurrent_ok[1]) return 4;
 
-    // The default deletion cutoff routes unusually long words through the same exact trie even for k<=2.
+    // An explicit deletion cutoff routes unusually long words through the same exact trie even for k<=2.
     szs::levenshtein_index<> fallback_index;
-    if (fallback_index.try_build(dictionary, 2) != sz::status_t::success_k) return 5;
+    if (fallback_index.try_build(dictionary, 2, 64) != sz::status_t::success_k) return 5;
     auto const &long_query = dictionary[dictionary.size() - 2];
     if (fallback_index.find({long_query.data(), long_query.size()}, 2, scratch, matches) !=
         sz::status_t::success_k)
@@ -92,6 +92,17 @@ int main() {
     }
     std::sort(actual_fallback.begin(), actual_fallback.end());
     if (actual_fallback != expected_fallback) return 7;
+
+    // Automatic planning avoids quadratic deletion neighborhoods for uniformly long dictionaries.
+    std::vector<std::string> long_dictionary = {std::string(100, 'a'), std::string(100, 'b')};
+    szs::levenshtein_index<> automatic_index;
+    if (automatic_index.try_build(long_dictionary, 2) != sz::status_t::success_k ||
+        automatic_index.records_count() != 0)
+        return 8;
+    if (automatic_index.find({long_dictionary[0].data(), long_dictionary[0].size()}, 2, scratch, matches) !=
+            sz::status_t::success_k ||
+        matches.size() != 1 || matches[0].id != 0 || matches[0].distance != 0)
+        return 9;
     std::cout << "OK: " << checks << " exhaustive memberships, records=" << index.records_count()
               << " index_bytes=" << index.index_bytes() << '\n';
 }
