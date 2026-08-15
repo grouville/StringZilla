@@ -1,0 +1,618 @@
+Welcome to StringZillas on CPU!
+- Uses Westmere: yes
+- Uses Goldmont: yes
+- Uses Haswell: yes
+- Uses Skylake: yes
+- Uses Ice Lake: yes
+- Uses NEON: no
+- Uses NEON AES: no
+- Uses NEON SHA: no
+- Uses SVE: no
+- Uses SVE2: no
+- Uses SVE2 AES: no
+- Uses WASM SIMD128: no
+- Uses WASM relaxed SIMD: no
+- Uses RISC-V RVV: no
+- Uses LoongArch LASX: no
+- Uses Power VSX: no
+- Uses CUDA: no
+- Uses Kepler CUDA: no
+- Uses Hopper CUDA: no
+Building up the environment...
+Environment built with the following settings:
+ - Dataset path: /tmp/dataset.txt
+ - Time limit: 2 seconds per benchmark (10 per stress-test)
+ - Algorithm filter: levenshtein_within|levenshtein_serial_unit
+ - Tokenization mode: word
+ - Seed: 0 (will avoid shuffling)
+ - Stress-testing: yes
+ - Unique tokens: no
+ - Loaded dataset size: 16777216 bytes
+ - Number of tokens: 1048576
+ - Mean token length: 7.50 bytes
+Starting string similarity benchmarks...
+
+Benchmarking [1m`levenshtein_serial_unit:q1xc524288:allpairs`[0m:
+> Throughput: 1.94 GiB/s @ 3.77 ms/call
+> Efficiency: 7.82 GOps/s @ 2.00 ops/cycle
+
+Benchmarking [1m`affine_levenshtein_serial_unit:q1xc524288:allpairs`[0m:
+> Throughput: 1.81 GiB/s @ 4.05 ms/call
+> Efficiency: 7.28 GOps/s @ 1.87 ops/cycle
+> [31m- 6.9 %[0m against `levenshtein_serial_unit:q1xc524288:allpairs`
+
+Benchmarking [1m`levenshtein_serial_unit:q1xc1:pairwise`[0m:
+> Throughput: 11.62 MiB/s @ 1.23 us/call
+> Efficiency: 45.71 MOps/s @ 0.01 ops/cycle
+
+Benchmarking [1m`affine_levenshtein_serial_unit:q1xc1:pairwise`[0m:
+> Throughput: 11.47 MiB/s @ 1.25 us/call
+> Efficiency: 45.10 MOps/s @ 0.01 ops/cycle
+> [31m- 1.3 %[0m against `levenshtein_serial_unit:q1xc1:pairwise`
+
+Benchmarking [1m`levenshtein_serial_unit:q110xc7149:allpairs`[0m:
+> Throughput: 1.93 GiB/s @ 5.68 ms/call
+> Efficiency: 7.77 GOps/s @ 1.99 ops/cycle
+
+Benchmarking [1m`affine_levenshtein_serial_unit:q110xc7149:allpairs`[0m:
+> Throughput: 1.80 GiB/s @ 6.10 ms/call
+> Efficiency: 7.23 GOps/s @ 1.85 ops/cycle
+> [31m- 6.9 %[0m against `levenshtein_serial_unit:q110xc7149:allpairs`
+
+Benchmarking [1m`levenshtein_serial_unit:q110xc110:pairwise`[0m:
+> Throughput: 29.81 MiB/s @ 52.78 us/call
+> Efficiency: 117.25 MOps/s @ 0.03 ops/cycle
+
+Benchmarking [1m`affine_levenshtein_serial_unit:q110xc110:pairwise`[0m:
+> Throughput: 30.95 MiB/s @ 50.85 us/call
+> Efficiency: 121.72 MOps/s @ 0.03 ops/cycle
+> [32m+ 3.8 %[0m against `levenshtein_serial_unit:q110xc110:pairwise`
+
+Benchmarking [1m`levenshtein_serial_unit:q886xc887:allpairs`[0m:
+> Throughput: 1.96 GiB/s @ 5.62 ms/call
+> Efficiency: 7.88 GOps/s @ 2.02 ops/cycle
+
+Benchmarking [1m`affine_levenshtein_serial_unit:q886xc887:allpairs`[0m:
+> Throughput: 1.82 GiB/s @ 6.02 ms/call
+> Efficiency: 7.35 GOps/s @ 1.89 ops/cycle
+> [31m- 6.7 %[0m against `levenshtein_serial_unit:q886xc887:allpairs`
+
+Benchmarking [1m`levenshtein_serial_unit:q886xc886:pairwise`[0m:
+> Throughput: 30.17 MiB/s @ 420.19 us/call
+> Efficiency: 118.64 MOps/s @ 0.03 ops/cycle
+
+Benchmarking [1m`affine_levenshtein_serial_unit:q886xc886:pairwise`[0m:
+> Throughput: 31.38 MiB/s @ 403.96 us/call
+> Efficiency: 123.40 MOps/s @ 0.03 ops/cycle
+> [32m+ 4.0 %[0m against `levenshtein_serial_unit:q886xc886:pairwise`
+
+Benchmarking [1m`levenshtein_serial_unit:q7088xc110:allpairs`[0m:
+> Throughput: 2.02 GiB/s @ 5.40 ms/call
+> Efficiency: 8.15 GOps/s @ 2.09 ops/cycle
+
+Benchmarking [1m`affine_levenshtein_serial_unit:q7088xc110:allpairs`[0m:
+> Throughput: 1.84 GiB/s @ 5.92 ms/call
+> Efficiency: 7.43 GOps/s @ 1.90 ops/cycle
+> [31m- 8.9 %[0m against `levenshtein_serial_unit:q7088xc110:allpairs`
+
+Benchmarking [1m`levenshtein_serial_unit:q7088xc7088:pairwise`[0m:
+> Throughput: 29.87 MiB/s @ 3.40 ms/call
+> Efficiency: 117.49 MOps/s @ 0.03 ops/cycle
+
+Benchmarking [1m`affine_levenshtein_serial_unit:q7088xc7088:pairwise`[0m:
+> Throughput: 31.12 MiB/s @ 3.26 ms/call
+> Efficiency: 122.41 MOps/s @ 0.03 ops/cycle
+> [32m+ 4.2 %[0m against `levenshtein_serial_unit:q7088xc7088:pairwise`
+
+Benchmarking [1m`levenshtein_serial_unit:q1xc524288:allpairs`[0m:
+> Throughput: 1.94 GiB/s @ 3.77 ms/call
+> Efficiency: 7.81 GOps/s @ 2.00 ops/cycle
+
+Benchmarking [1m`levenshtein_within_serial_k1:q1xc524288:allpairs`[0m:
+> Throughput: 3.24 GiB/s @ 2.25 ms/call
+> Efficiency: 13.00 GOps/s @ 3.33 ops/cycle
+> [32m+ 66.5 %[0m against `levenshtein_serial_unit:q1xc524288:allpairs`
+
+Benchmarking [1m`levenshtein_within_serial_k2:q1xc524288:allpairs`[0m:
+> Throughput: 2.68 GiB/s @ 2.71 ms/call
+> Efficiency: 10.74 GOps/s @ 2.75 ops/cycle
+> [32m+ 37.5 %[0m against `levenshtein_serial_unit:q1xc524288:allpairs`
+
+Benchmarking [1m`levenshtein_within_serial_k3:q1xc524288:allpairs`[0m:
+> Throughput: 2.43 GiB/s @ 3.00 ms/call
+> Efficiency: 9.75 GOps/s @ 2.50 ops/cycle
+> [32m+ 24.8 %[0m against `levenshtein_serial_unit:q1xc524288:allpairs`
+
+Benchmarking [1m`levenshtein_within_serial_k9:q1xc524288:allpairs`[0m:
+> Throughput: 2.29 GiB/s @ 3.19 ms/call
+> Efficiency: 9.23 GOps/s @ 2.37 ops/cycle
+> [32m+ 18.2 %[0m against `levenshtein_serial_unit:q1xc524288:allpairs`
+
+Benchmarking [1m`levenshtein_within_haswell_k1:q1xc524288:allpairs`[0m:
+> Throughput: 5.90 GiB/s @ 1.24 ms/call
+> Efficiency: 23.65 GOps/s @ 6.07 ops/cycle
+> [32m+ 3.0 x[0m against `levenshtein_serial_unit:q1xc524288:allpairs`
+
+Benchmarking [1m`levenshtein_within_haswell_k2:q1xc524288:allpairs`[0m:
+> Throughput: 4.40 GiB/s @ 1.66 ms/call
+> Efficiency: 17.64 GOps/s @ 4.52 ops/cycle
+> [32m+ 2.3 x[0m against `levenshtein_serial_unit:q1xc524288:allpairs`
+
+Benchmarking [1m`levenshtein_within_haswell_k3:q1xc524288:allpairs`[0m:
+> Throughput: 3.77 GiB/s @ 1.93 ms/call
+> Efficiency: 15.11 GOps/s @ 3.87 ops/cycle
+> [32m+ 93.4 %[0m against `levenshtein_serial_unit:q1xc524288:allpairs`
+
+Benchmarking [1m`levenshtein_within_haswell_k9:q1xc524288:allpairs`[0m:
+> Throughput: 2.76 GiB/s @ 2.64 ms/call
+> Efficiency: 11.03 GOps/s @ 2.83 ops/cycle
+> [32m+ 41.2 %[0m against `levenshtein_serial_unit:q1xc524288:allpairs`
+
+Benchmarking [1m`levenshtein_within_icelake_k1:q1xc524288:allpairs`[0m:
+> Throughput: 6.04 GiB/s @ 1.21 ms/call
+> Efficiency: 24.25 GOps/s @ 6.22 ops/cycle
+> [32m+ 3.1 x[0m against `levenshtein_serial_unit:q1xc524288:allpairs`
+
+Benchmarking [1m`levenshtein_within_icelake_k2:q1xc524288:allpairs`[0m:
+> Throughput: 4.60 GiB/s @ 1.59 ms/call
+> Efficiency: 18.44 GOps/s @ 4.73 ops/cycle
+> [32m+ 2.4 x[0m against `levenshtein_serial_unit:q1xc524288:allpairs`
+
+Benchmarking [1m`levenshtein_within_icelake_k3:q1xc524288:allpairs`[0m:
+> Throughput: 4.00 GiB/s @ 1.82 ms/call
+> Efficiency: 16.05 GOps/s @ 4.12 ops/cycle
+> [32m+ 2.1 x[0m against `levenshtein_serial_unit:q1xc524288:allpairs`
+
+Benchmarking [1m`levenshtein_within_icelake_k9:q1xc524288:allpairs`[0m:
+> Throughput: 3.54 GiB/s @ 2.06 ms/call
+> Efficiency: 14.18 GOps/s @ 3.64 ops/cycle
+> [32m+ 81.6 %[0m against `levenshtein_serial_unit:q1xc524288:allpairs`
+
+Benchmarking [1m`levenshtein_serial_unit:q1xc1:pairwise`[0m:
+> Throughput: 11.46 MiB/s @ 1.25 us/call
+> Efficiency: 45.05 MOps/s @ 0.01 ops/cycle
+
+Benchmarking [1m`levenshtein_within_serial_k1:q1xc1:pairwise`[0m:
+> Throughput: 11.55 MiB/s @ 1.24 us/call
+> Efficiency: 45.41 MOps/s @ 0.01 ops/cycle
+> [32m+ 0.8 %[0m against `levenshtein_serial_unit:q1xc1:pairwise`
+
+Benchmarking [1m`levenshtein_within_serial_k2:q1xc1:pairwise`[0m:
+> Throughput: 11.75 MiB/s @ 1.22 us/call
+> Efficiency: 46.21 MOps/s @ 0.01 ops/cycle
+> [32m+ 2.6 %[0m against `levenshtein_serial_unit:q1xc1:pairwise`
+
+Benchmarking [1m`levenshtein_within_serial_k3:q1xc1:pairwise`[0m:
+> Throughput: 11.59 MiB/s @ 1.23 us/call
+> Efficiency: 45.59 MOps/s @ 0.01 ops/cycle
+> [32m+ 1.2 %[0m against `levenshtein_serial_unit:q1xc1:pairwise`
+
+Benchmarking [1m`levenshtein_within_serial_k9:q1xc1:pairwise`[0m:
+> Throughput: 11.29 MiB/s @ 1.27 us/call
+> Efficiency: 44.38 MOps/s @ 0.01 ops/cycle
+> [31m- 1.5 %[0m against `levenshtein_serial_unit:q1xc1:pairwise`
+
+Benchmarking [1m`levenshtein_within_haswell_k1:q1xc1:pairwise`[0m:
+> Throughput: 11.32 MiB/s @ 1.26 us/call
+> Efficiency: 44.51 MOps/s @ 0.01 ops/cycle
+> [31m- 1.2 %[0m against `levenshtein_serial_unit:q1xc1:pairwise`
+
+Benchmarking [1m`levenshtein_within_haswell_k2:q1xc1:pairwise`[0m:
+> Throughput: 11.61 MiB/s @ 1.23 us/call
+> Efficiency: 45.64 MOps/s @ 0.01 ops/cycle
+> [32m+ 1.3 %[0m against `levenshtein_serial_unit:q1xc1:pairwise`
+
+Benchmarking [1m`levenshtein_within_haswell_k3:q1xc1:pairwise`[0m:
+> Throughput: 11.39 MiB/s @ 1.26 us/call
+> Efficiency: 44.77 MOps/s @ 0.01 ops/cycle
+> [31m- 0.6 %[0m against `levenshtein_serial_unit:q1xc1:pairwise`
+
+Benchmarking [1m`levenshtein_within_haswell_k9:q1xc1:pairwise`[0m:
+> Throughput: 11.66 MiB/s @ 1.23 us/call
+> Efficiency: 45.85 MOps/s @ 0.01 ops/cycle
+> [32m+ 1.8 %[0m against `levenshtein_serial_unit:q1xc1:pairwise`
+
+Benchmarking [1m`levenshtein_within_icelake_k1:q1xc1:pairwise`[0m:
+> Throughput: 11.81 MiB/s @ 1.21 us/call
+> Efficiency: 46.43 MOps/s @ 0.01 ops/cycle
+> [32m+ 3.1 %[0m against `levenshtein_serial_unit:q1xc1:pairwise`
+
+Benchmarking [1m`levenshtein_within_icelake_k2:q1xc1:pairwise`[0m:
+> Throughput: 11.57 MiB/s @ 1.24 us/call
+> Efficiency: 45.51 MOps/s @ 0.01 ops/cycle
+> [32m+ 1.0 %[0m against `levenshtein_serial_unit:q1xc1:pairwise`
+
+Benchmarking [1m`levenshtein_within_icelake_k3:q1xc1:pairwise`[0m:
+> Throughput: 11.53 MiB/s @ 1.24 us/call
+> Efficiency: 45.34 MOps/s @ 0.01 ops/cycle
+> [32m+ 0.6 %[0m against `levenshtein_serial_unit:q1xc1:pairwise`
+
+Benchmarking [1m`levenshtein_within_icelake_k9:q1xc1:pairwise`[0m:
+> Throughput: 11.45 MiB/s @ 1.25 us/call
+> Efficiency: 45.02 MOps/s @ 0.01 ops/cycle
+> [31m- 0.1 %[0m against `levenshtein_serial_unit:q1xc1:pairwise`
+
+Benchmarking [1m`levenshtein_serial_unit:q110xc7149:allpairs`[0m:
+> Throughput: 1.93 GiB/s @ 5.70 ms/call
+> Efficiency: 7.75 GOps/s @ 1.99 ops/cycle
+
+Benchmarking [1m`levenshtein_within_serial_k1:q110xc7149:allpairs`[0m:
+> Throughput: 3.16 GiB/s @ 3.48 ms/call
+> Efficiency: 12.71 GOps/s @ 3.26 ops/cycle
+> [32m+ 64.0 %[0m against `levenshtein_serial_unit:q110xc7149:allpairs`
+
+Benchmarking [1m`levenshtein_within_serial_k2:q110xc7149:allpairs`[0m:
+> Throughput: 2.59 GiB/s @ 4.24 ms/call
+> Efficiency: 10.42 GOps/s @ 2.67 ops/cycle
+> [32m+ 34.5 %[0m against `levenshtein_serial_unit:q110xc7149:allpairs`
+
+Benchmarking [1m`levenshtein_within_serial_k3:q110xc7149:allpairs`[0m:
+> Throughput: 2.32 GiB/s @ 4.73 ms/call
+> Efficiency: 9.33 GOps/s @ 2.39 ops/cycle
+> [32m+ 20.5 %[0m against `levenshtein_serial_unit:q110xc7149:allpairs`
+
+Benchmarking [1m`levenshtein_within_serial_k9:q110xc7149:allpairs`[0m:
+> Throughput: 2.14 GiB/s @ 5.14 ms/call
+> Efficiency: 8.60 GOps/s @ 2.21 ops/cycle
+> [32m+ 11.0 %[0m against `levenshtein_serial_unit:q110xc7149:allpairs`
+
+Benchmarking [1m`levenshtein_within_haswell_k1:q110xc7149:allpairs`[0m:
+> Throughput: 6.90 GiB/s @ 1.59 ms/call
+> Efficiency: 27.76 GOps/s @ 7.12 ops/cycle
+> [32m+ 3.6 x[0m against `levenshtein_serial_unit:q110xc7149:allpairs`
+
+Benchmarking [1m`levenshtein_within_haswell_k2:q110xc7149:allpairs`[0m:
+> Throughput: 4.84 GiB/s @ 2.27 ms/call
+> Efficiency: 19.46 GOps/s @ 4.99 ops/cycle
+> [32m+ 2.5 x[0m against `levenshtein_serial_unit:q110xc7149:allpairs`
+
+Benchmarking [1m`levenshtein_within_haswell_k3:q110xc7149:allpairs`[0m:
+> Throughput: 4.01 GiB/s @ 2.74 ms/call
+> Efficiency: 16.13 GOps/s @ 4.14 ops/cycle
+> [32m+ 2.1 x[0m against `levenshtein_serial_unit:q110xc7149:allpairs`
+
+Benchmarking [1m`levenshtein_within_haswell_k9:q110xc7149:allpairs`[0m:
+> Throughput: 2.91 GiB/s @ 3.78 ms/call
+> Efficiency: 11.71 GOps/s @ 3.00 ops/cycle
+> [32m+ 51.2 %[0m against `levenshtein_serial_unit:q110xc7149:allpairs`
+
+Benchmarking [1m`levenshtein_within_icelake_k1:q110xc7149:allpairs`[0m:
+> Throughput: 7.11 GiB/s @ 1.54 ms/call
+> Efficiency: 28.62 GOps/s @ 7.34 ops/cycle
+> [32m+ 3.7 x[0m against `levenshtein_serial_unit:q110xc7149:allpairs`
+
+Benchmarking [1m`levenshtein_within_icelake_k2:q110xc7149:allpairs`[0m:
+> Throughput: 4.99 GiB/s @ 2.20 ms/call
+> Efficiency: 20.10 GOps/s @ 5.15 ops/cycle
+> [32m+ 2.6 x[0m against `levenshtein_serial_unit:q110xc7149:allpairs`
+
+Benchmarking [1m`levenshtein_within_icelake_k3:q110xc7149:allpairs`[0m:
+> Throughput: 4.25 GiB/s @ 2.59 ms/call
+> Efficiency: 17.09 GOps/s @ 4.38 ops/cycle
+> [32m+ 2.2 x[0m against `levenshtein_serial_unit:q110xc7149:allpairs`
+
+Benchmarking [1m`levenshtein_within_icelake_k9:q110xc7149:allpairs`[0m:
+> Throughput: 3.90 GiB/s @ 2.82 ms/call
+> Efficiency: 15.68 GOps/s @ 4.02 ops/cycle
+> [32m+ 2.0 x[0m against `levenshtein_serial_unit:q110xc7149:allpairs`
+
+Benchmarking [1m`levenshtein_serial_unit:q110xc110:pairwise`[0m:
+> Throughput: 29.16 MiB/s @ 53.97 us/call
+> Efficiency: 114.67 MOps/s @ 0.03 ops/cycle
+
+Benchmarking [1m`levenshtein_within_serial_k1:q110xc110:pairwise`[0m:
+> Throughput: 30.64 MiB/s @ 51.36 us/call
+> Efficiency: 120.49 MOps/s @ 0.03 ops/cycle
+> [32m+ 5.1 %[0m against `levenshtein_serial_unit:q110xc110:pairwise`
+
+Benchmarking [1m`levenshtein_within_serial_k2:q110xc110:pairwise`[0m:
+> Throughput: 30.19 MiB/s @ 52.13 us/call
+> Efficiency: 118.73 MOps/s @ 0.03 ops/cycle
+> [32m+ 3.5 %[0m against `levenshtein_serial_unit:q110xc110:pairwise`
+
+Benchmarking [1m`levenshtein_within_serial_k3:q110xc110:pairwise`[0m:
+> Throughput: 29.85 MiB/s @ 52.73 us/call
+> Efficiency: 117.38 MOps/s @ 0.03 ops/cycle
+> [32m+ 2.4 %[0m against `levenshtein_serial_unit:q110xc110:pairwise`
+
+Benchmarking [1m`levenshtein_within_serial_k9:q110xc110:pairwise`[0m:
+> Throughput: 29.91 MiB/s @ 52.61 us/call
+> Efficiency: 117.64 MOps/s @ 0.03 ops/cycle
+> [32m+ 2.6 %[0m against `levenshtein_serial_unit:q110xc110:pairwise`
+
+Benchmarking [1m`levenshtein_within_haswell_k1:q110xc110:pairwise`[0m:
+> Throughput: 30.67 MiB/s @ 51.31 us/call
+> Efficiency: 120.62 MOps/s @ 0.03 ops/cycle
+> [32m+ 5.2 %[0m against `levenshtein_serial_unit:q110xc110:pairwise`
+
+Benchmarking [1m`levenshtein_within_haswell_k2:q110xc110:pairwise`[0m:
+> Throughput: 30.37 MiB/s @ 51.82 us/call
+> Efficiency: 119.43 MOps/s @ 0.03 ops/cycle
+> [32m+ 4.2 %[0m against `levenshtein_serial_unit:q110xc110:pairwise`
+
+Benchmarking [1m`levenshtein_within_haswell_k3:q110xc110:pairwise`[0m:
+> Throughput: 29.67 MiB/s @ 53.04 us/call
+> Efficiency: 116.69 MOps/s @ 0.03 ops/cycle
+> [32m+ 1.8 %[0m against `levenshtein_serial_unit:q110xc110:pairwise`
+
+Benchmarking [1m`levenshtein_within_haswell_k9:q110xc110:pairwise`[0m:
+> Throughput: 29.37 MiB/s @ 53.57 us/call
+> Efficiency: 115.52 MOps/s @ 0.03 ops/cycle
+> [32m+ 0.7 %[0m against `levenshtein_serial_unit:q110xc110:pairwise`
+
+Benchmarking [1m`levenshtein_within_icelake_k1:q110xc110:pairwise`[0m:
+> Throughput: 30.56 MiB/s @ 51.49 us/call
+> Efficiency: 120.20 MOps/s @ 0.03 ops/cycle
+> [32m+ 4.8 %[0m against `levenshtein_serial_unit:q110xc110:pairwise`
+
+Benchmarking [1m`levenshtein_within_icelake_k2:q110xc110:pairwise`[0m:
+> Throughput: 29.72 MiB/s @ 52.94 us/call
+> Efficiency: 116.90 MOps/s @ 0.03 ops/cycle
+> [32m+ 1.9 %[0m against `levenshtein_serial_unit:q110xc110:pairwise`
+
+Benchmarking [1m`levenshtein_within_icelake_k3:q110xc110:pairwise`[0m:
+> Throughput: 30.46 MiB/s @ 51.66 us/call
+> Efficiency: 119.80 MOps/s @ 0.03 ops/cycle
+> [32m+ 4.5 %[0m against `levenshtein_serial_unit:q110xc110:pairwise`
+
+Benchmarking [1m`levenshtein_within_icelake_k9:q110xc110:pairwise`[0m:
+> Throughput: 29.47 MiB/s @ 53.39 us/call
+> Efficiency: 115.91 MOps/s @ 0.03 ops/cycle
+> [32m+ 1.1 %[0m against `levenshtein_serial_unit:q110xc110:pairwise`
+
+Benchmarking [1m`levenshtein_serial_unit:q886xc887:allpairs`[0m:
+> Throughput: 1.97 GiB/s @ 5.56 ms/call
+> Efficiency: 7.95 GOps/s @ 2.04 ops/cycle
+
+Benchmarking [1m`levenshtein_within_serial_k1:q886xc887:allpairs`[0m:
+> Throughput: 3.31 GiB/s @ 3.32 ms/call
+> Efficiency: 13.33 GOps/s @ 3.42 ops/cycle
+> [32m+ 67.6 %[0m against `levenshtein_serial_unit:q886xc887:allpairs`
+
+Benchmarking [1m`levenshtein_within_serial_k2:q886xc887:allpairs`[0m:
+> Throughput: 2.74 GiB/s @ 4.00 ms/call
+> Efficiency: 11.06 GOps/s @ 2.84 ops/cycle
+> [32m+ 39.0 %[0m against `levenshtein_serial_unit:q886xc887:allpairs`
+
+Benchmarking [1m`levenshtein_within_serial_k3:q886xc887:allpairs`[0m:
+> Throughput: 2.44 GiB/s @ 4.51 ms/call
+> Efficiency: 9.81 GOps/s @ 2.52 ops/cycle
+> [32m+ 23.4 %[0m against `levenshtein_serial_unit:q886xc887:allpairs`
+
+Benchmarking [1m`levenshtein_within_serial_k9:q886xc887:allpairs`[0m:
+> Throughput: 2.28 GiB/s @ 4.81 ms/call
+> Efficiency: 9.20 GOps/s @ 2.36 ops/cycle
+> [32m+ 15.6 %[0m against `levenshtein_serial_unit:q886xc887:allpairs`
+
+Benchmarking [1m`levenshtein_within_haswell_k1:q886xc887:allpairs`[0m:
+> Throughput: 7.29 GiB/s @ 1.51 ms/call
+> Efficiency: 29.37 GOps/s @ 7.53 ops/cycle
+> [32m+ 3.7 x[0m against `levenshtein_serial_unit:q886xc887:allpairs`
+
+Benchmarking [1m`levenshtein_within_haswell_k2:q886xc887:allpairs`[0m:
+> Throughput: 5.26 GiB/s @ 2.09 ms/call
+> Efficiency: 21.18 GOps/s @ 5.43 ops/cycle
+> [32m+ 2.7 x[0m against `levenshtein_serial_unit:q886xc887:allpairs`
+
+Benchmarking [1m`levenshtein_within_haswell_k3:q886xc887:allpairs`[0m:
+> Throughput: 4.32 GiB/s @ 2.54 ms/call
+> Efficiency: 17.39 GOps/s @ 4.46 ops/cycle
+> [32m+ 2.2 x[0m against `levenshtein_serial_unit:q886xc887:allpairs`
+
+Benchmarking [1m`levenshtein_within_haswell_k9:q886xc887:allpairs`[0m:
+> Throughput: 2.86 GiB/s @ 3.84 ms/call
+> Efficiency: 11.53 GOps/s @ 2.96 ops/cycle
+> [32m+ 44.9 %[0m against `levenshtein_serial_unit:q886xc887:allpairs`
+
+Benchmarking [1m`levenshtein_within_icelake_k1:q886xc887:allpairs`[0m:
+> Throughput: 7.48 GiB/s @ 1.47 ms/call
+> Efficiency: 30.13 GOps/s @ 7.73 ops/cycle
+> [32m+ 3.8 x[0m against `levenshtein_serial_unit:q886xc887:allpairs`
+
+Benchmarking [1m`levenshtein_within_icelake_k2:q886xc887:allpairs`[0m:
+> Throughput: 5.48 GiB/s @ 2.00 ms/call
+> Efficiency: 22.07 GOps/s @ 5.66 ops/cycle
+> [32m+ 2.8 x[0m against `levenshtein_serial_unit:q886xc887:allpairs`
+
+Benchmarking [1m`levenshtein_within_icelake_k3:q886xc887:allpairs`[0m:
+> Throughput: 4.68 GiB/s @ 2.34 ms/call
+> Efficiency: 18.87 GOps/s @ 4.84 ops/cycle
+> [32m+ 2.4 x[0m against `levenshtein_serial_unit:q886xc887:allpairs`
+
+Benchmarking [1m`levenshtein_within_icelake_k9:q886xc887:allpairs`[0m:
+> Throughput: 4.73 GiB/s @ 2.32 ms/call
+> Efficiency: 19.04 GOps/s @ 4.88 ops/cycle
+> [32m+ 2.4 x[0m against `levenshtein_serial_unit:q886xc887:allpairs`
+
+Benchmarking [1m`levenshtein_serial_unit:q886xc886:pairwise`[0m:
+> Throughput: 29.08 MiB/s @ 435.90 us/call
+> Efficiency: 114.36 MOps/s @ 0.03 ops/cycle
+
+Benchmarking [1m`levenshtein_within_serial_k1:q886xc886:pairwise`[0m:
+> Throughput: 30.99 MiB/s @ 409.04 us/call
+> Efficiency: 121.87 MOps/s @ 0.03 ops/cycle
+> [32m+ 6.6 %[0m against `levenshtein_serial_unit:q886xc886:pairwise`
+
+Benchmarking [1m`levenshtein_within_serial_k2:q886xc886:pairwise`[0m:
+> Throughput: 30.92 MiB/s @ 409.93 us/call
+> Efficiency: 121.61 MOps/s @ 0.03 ops/cycle
+> [32m+ 6.3 %[0m against `levenshtein_serial_unit:q886xc886:pairwise`
+
+Benchmarking [1m`levenshtein_within_serial_k3:q886xc886:pairwise`[0m:
+> Throughput: 31.10 MiB/s @ 407.65 us/call
+> Efficiency: 122.29 MOps/s @ 0.03 ops/cycle
+> [32m+ 6.9 %[0m against `levenshtein_serial_unit:q886xc886:pairwise`
+
+Benchmarking [1m`levenshtein_within_serial_k9:q886xc886:pairwise`[0m:
+> Throughput: 30.86 MiB/s @ 410.80 us/call
+> Efficiency: 121.35 MOps/s @ 0.03 ops/cycle
+> [32m+ 6.1 %[0m against `levenshtein_serial_unit:q886xc886:pairwise`
+
+Benchmarking [1m`levenshtein_within_haswell_k1:q886xc886:pairwise`[0m:
+> Throughput: 32.05 MiB/s @ 395.46 us/call
+> Efficiency: 126.05 MOps/s @ 0.03 ops/cycle
+> [32m+ 10.2 %[0m against `levenshtein_serial_unit:q886xc886:pairwise`
+
+Benchmarking [1m`levenshtein_within_haswell_k2:q886xc886:pairwise`[0m:
+> Throughput: 31.23 MiB/s @ 405.96 us/call
+> Efficiency: 122.80 MOps/s @ 0.03 ops/cycle
+> [32m+ 7.4 %[0m against `levenshtein_serial_unit:q886xc886:pairwise`
+
+Benchmarking [1m`levenshtein_within_haswell_k3:q886xc886:pairwise`[0m:
+> Throughput: 31.22 MiB/s @ 406.07 us/call
+> Efficiency: 122.76 MOps/s @ 0.03 ops/cycle
+> [32m+ 7.3 %[0m against `levenshtein_serial_unit:q886xc886:pairwise`
+
+Benchmarking [1m`levenshtein_within_haswell_k9:q886xc886:pairwise`[0m:
+> Throughput: 29.59 MiB/s @ 428.40 us/call
+> Efficiency: 116.36 MOps/s @ 0.03 ops/cycle
+> [32m+ 1.7 %[0m against `levenshtein_serial_unit:q886xc886:pairwise`
+
+Benchmarking [1m`levenshtein_within_icelake_k1:q886xc886:pairwise`[0m:
+> Throughput: 31.92 MiB/s @ 397.07 us/call
+> Efficiency: 125.54 MOps/s @ 0.03 ops/cycle
+> [32m+ 9.8 %[0m against `levenshtein_serial_unit:q886xc886:pairwise`
+
+Benchmarking [1m`levenshtein_within_icelake_k2:q886xc886:pairwise`[0m:
+> Throughput: 31.55 MiB/s @ 401.73 us/call
+> Efficiency: 124.08 MOps/s @ 0.03 ops/cycle
+> [32m+ 8.5 %[0m against `levenshtein_serial_unit:q886xc886:pairwise`
+
+Benchmarking [1m`levenshtein_within_icelake_k3:q886xc886:pairwise`[0m:
+> Throughput: 30.68 MiB/s @ 413.20 us/call
+> Efficiency: 120.65 MOps/s @ 0.03 ops/cycle
+> [32m+ 5.5 %[0m against `levenshtein_serial_unit:q886xc886:pairwise`
+
+Benchmarking [1m`levenshtein_within_icelake_k9:q886xc886:pairwise`[0m:
+> Throughput: 30.12 MiB/s @ 420.81 us/call
+> Efficiency: 118.46 MOps/s @ 0.03 ops/cycle
+> [32m+ 3.6 %[0m against `levenshtein_serial_unit:q886xc886:pairwise`
+
+Benchmarking [1m`levenshtein_serial_unit:q7088xc110:allpairs`[0m:
+> Throughput: 2.01 GiB/s @ 5.43 ms/call
+> Efficiency: 8.09 GOps/s @ 2.08 ops/cycle
+
+Benchmarking [1m`levenshtein_within_serial_k1:q7088xc110:allpairs`[0m:
+> Throughput: 3.22 GiB/s @ 3.39 ms/call
+> Efficiency: 12.96 GOps/s @ 3.32 ops/cycle
+> [32m+ 60.1 %[0m against `levenshtein_serial_unit:q7088xc110:allpairs`
+
+Benchmarking [1m`levenshtein_within_serial_k2:q7088xc110:allpairs`[0m:
+> Throughput: 2.79 GiB/s @ 3.90 ms/call
+> Efficiency: 11.26 GOps/s @ 2.89 ops/cycle
+> [32m+ 39.1 %[0m against `levenshtein_serial_unit:q7088xc110:allpairs`
+
+Benchmarking [1m`levenshtein_within_serial_k3:q7088xc110:allpairs`[0m:
+> Throughput: 2.58 GiB/s @ 4.23 ms/call
+> Efficiency: 10.39 GOps/s @ 2.66 ops/cycle
+> [32m+ 28.3 %[0m against `levenshtein_serial_unit:q7088xc110:allpairs`
+
+Benchmarking [1m`levenshtein_within_serial_k9:q7088xc110:allpairs`[0m:
+> Throughput: 2.39 GiB/s @ 4.57 ms/call
+> Efficiency: 9.62 GOps/s @ 2.47 ops/cycle
+> [32m+ 18.8 %[0m against `levenshtein_serial_unit:q7088xc110:allpairs`
+
+Benchmarking [1m`levenshtein_within_haswell_k1:q7088xc110:allpairs`[0m:
+> Throughput: 8.03 GiB/s @ 1.36 ms/call
+> Efficiency: 32.35 GOps/s @ 8.30 ops/cycle
+> [32m+ 4.0 x[0m against `levenshtein_serial_unit:q7088xc110:allpairs`
+
+Benchmarking [1m`levenshtein_within_haswell_k2:q7088xc110:allpairs`[0m:
+> Throughput: 6.03 GiB/s @ 1.81 ms/call
+> Efficiency: 24.27 GOps/s @ 6.22 ops/cycle
+> [32m+ 3.0 x[0m against `levenshtein_serial_unit:q7088xc110:allpairs`
+
+Benchmarking [1m`levenshtein_within_haswell_k3:q7088xc110:allpairs`[0m:
+> Throughput: 5.12 GiB/s @ 2.13 ms/call
+> Efficiency: 20.62 GOps/s @ 5.29 ops/cycle
+> [32m+ 2.5 x[0m against `levenshtein_serial_unit:q7088xc110:allpairs`
+
+Benchmarking [1m`levenshtein_within_haswell_k9:q7088xc110:allpairs`[0m:
+> Throughput: 3.28 GiB/s @ 3.32 ms/call
+> Efficiency: 13.22 GOps/s @ 3.39 ops/cycle
+> [32m+ 63.4 %[0m against `levenshtein_serial_unit:q7088xc110:allpairs`
+
+Benchmarking [1m`levenshtein_within_icelake_k1:q7088xc110:allpairs`[0m:
+> Throughput: 8.30 GiB/s @ 1.31 ms/call
+> Efficiency: 33.45 GOps/s @ 8.58 ops/cycle
+> [32m+ 4.1 x[0m against `levenshtein_serial_unit:q7088xc110:allpairs`
+
+Benchmarking [1m`levenshtein_within_icelake_k2:q7088xc110:allpairs`[0m:
+> Throughput: 6.52 GiB/s @ 1.67 ms/call
+> Efficiency: 26.25 GOps/s @ 6.73 ops/cycle
+> [32m+ 3.2 x[0m against `levenshtein_serial_unit:q7088xc110:allpairs`
+
+Benchmarking [1m`levenshtein_within_icelake_k3:q7088xc110:allpairs`[0m:
+> Throughput: 5.97 GiB/s @ 1.83 ms/call
+> Efficiency: 24.03 GOps/s @ 6.16 ops/cycle
+> [32m+ 3.0 x[0m against `levenshtein_serial_unit:q7088xc110:allpairs`
+
+Benchmarking [1m`levenshtein_within_icelake_k9:q7088xc110:allpairs`[0m:
+> Throughput: 5.45 GiB/s @ 2.00 ms/call
+> Efficiency: 21.96 GOps/s @ 5.63 ops/cycle
+> [32m+ 2.7 x[0m against `levenshtein_serial_unit:q7088xc110:allpairs`
+
+Benchmarking [1m`levenshtein_serial_unit:q7088xc7088:pairwise`[0m:
+> Throughput: 30.37 MiB/s @ 3.34 ms/call
+> Efficiency: 119.49 MOps/s @ 0.03 ops/cycle
+
+Benchmarking [1m`levenshtein_within_serial_k1:q7088xc7088:pairwise`[0m:
+> Throughput: 31.52 MiB/s @ 3.22 ms/call
+> Efficiency: 123.99 MOps/s @ 0.03 ops/cycle
+> [32m+ 3.8 %[0m against `levenshtein_serial_unit:q7088xc7088:pairwise`
+
+Benchmarking [1m`levenshtein_within_serial_k2:q7088xc7088:pairwise`[0m:
+> Throughput: 31.07 MiB/s @ 3.27 ms/call
+> Efficiency: 122.21 MOps/s @ 0.03 ops/cycle
+> [32m+ 2.3 %[0m against `levenshtein_serial_unit:q7088xc7088:pairwise`
+
+Benchmarking [1m`levenshtein_within_serial_k3:q7088xc7088:pairwise`[0m:
+> Throughput: 30.75 MiB/s @ 3.30 ms/call
+> Efficiency: 120.95 MOps/s @ 0.03 ops/cycle
+> [32m+ 1.2 %[0m against `levenshtein_serial_unit:q7088xc7088:pairwise`
+
+Benchmarking [1m`levenshtein_within_serial_k9:q7088xc7088:pairwise`[0m:
+> Throughput: 29.83 MiB/s @ 3.40 ms/call
+> Efficiency: 117.36 MOps/s @ 0.03 ops/cycle
+> [31m- 1.8 %[0m against `levenshtein_serial_unit:q7088xc7088:pairwise`
+
+Benchmarking [1m`levenshtein_within_haswell_k1:q7088xc7088:pairwise`[0m:
+> Throughput: 30.65 MiB/s @ 3.31 ms/call
+> Efficiency: 120.58 MOps/s @ 0.03 ops/cycle
+> [32m+ 0.9 %[0m against `levenshtein_serial_unit:q7088xc7088:pairwise`
+
+Benchmarking [1m`levenshtein_within_haswell_k2:q7088xc7088:pairwise`[0m:
+> Throughput: 31.61 MiB/s @ 3.21 ms/call
+> Efficiency: 124.33 MOps/s @ 0.03 ops/cycle
+> [32m+ 4.1 %[0m against `levenshtein_serial_unit:q7088xc7088:pairwise`
+
+Benchmarking [1m`levenshtein_within_haswell_k3:q7088xc7088:pairwise`[0m:
+> Throughput: 30.79 MiB/s @ 3.29 ms/call
+> Efficiency: 121.11 MOps/s @ 0.03 ops/cycle
+> [32m+ 1.4 %[0m against `levenshtein_serial_unit:q7088xc7088:pairwise`
+
+Benchmarking [1m`levenshtein_within_haswell_k9:q7088xc7088:pairwise`[0m:
+> Throughput: 29.58 MiB/s @ 3.43 ms/call
+> Efficiency: 116.34 MOps/s @ 0.03 ops/cycle
+> [31m- 2.6 %[0m against `levenshtein_serial_unit:q7088xc7088:pairwise`
+
+Benchmarking [1m`levenshtein_within_icelake_k1:q7088xc7088:pairwise`[0m:
+> Throughput: 32.54 MiB/s @ 3.12 ms/call
+> Efficiency: 127.99 MOps/s @ 0.03 ops/cycle
+> [32m+ 7.1 %[0m against `levenshtein_serial_unit:q7088xc7088:pairwise`
+
+Benchmarking [1m`levenshtein_within_icelake_k2:q7088xc7088:pairwise`[0m:
+> Throughput: 31.50 MiB/s @ 3.22 ms/call
+> Efficiency: 123.93 MOps/s @ 0.03 ops/cycle
+> [32m+ 3.7 %[0m against `levenshtein_serial_unit:q7088xc7088:pairwise`
+
+Benchmarking [1m`levenshtein_within_icelake_k3:q7088xc7088:pairwise`[0m:
+> Throughput: 31.33 MiB/s @ 3.24 ms/call
+> Efficiency: 123.23 MOps/s @ 0.03 ops/cycle
+> [32m+ 3.1 %[0m against `levenshtein_serial_unit:q7088xc7088:pairwise`
+
+Benchmarking [1m`levenshtein_within_icelake_k9:q7088xc7088:pairwise`[0m:
+> Throughput: 30.32 MiB/s @ 3.35 ms/call
+> Efficiency: 119.29 MOps/s @ 0.03 ops/cycle
+> [31m- 0.2 %[0m against `levenshtein_serial_unit:q7088xc7088:pairwise`
+All benchmarks finished.

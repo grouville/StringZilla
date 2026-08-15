@@ -1,0 +1,62 @@
+Welcome to StringZillas on CPU!
+- Uses Westmere: yes
+- Uses Goldmont: yes
+- Uses Haswell: yes
+- Uses Skylake: yes
+- Uses Ice Lake: yes
+- Uses NEON: no
+- Uses NEON AES: no
+- Uses NEON SHA: no
+- Uses SVE: no
+- Uses SVE2: no
+- Uses SVE2 AES: no
+- Uses WASM SIMD128: no
+- Uses WASM relaxed SIMD: no
+- Uses RISC-V RVV: no
+- Uses LoongArch LASX: no
+- Uses Power VSX: no
+- Uses CUDA: no
+- Uses Kepler CUDA: no
+- Uses Hopper CUDA: no
+Building up the environment...
+Environment built with the following settings:
+ - Dataset path: /tmp/dataset.txt
+ - Time limit: 10 seconds per benchmark (10 per stress-test)
+ - Algorithm filter: levenshtein_within_(serial|haswell|icelake)_k9:q7088xc7088:pairwise|levenshtein_serial_unit:q7088xc7088:pairwise
+ - Tokenization mode: word
+ - Seed: 0 (will avoid shuffling)
+ - Stress-testing: yes
+ - Unique tokens: no
+ - Loaded dataset size: 16777216 bytes
+ - Number of tokens: 1048576
+ - Mean token length: 7.50 bytes
+Starting string similarity benchmarks...
+
+Benchmarking [1m`levenshtein_serial_unit:q7088xc7088:pairwise`[0m:
+> Throughput: 31.16 MiB/s @ 3.25 ms/call
+> Efficiency: 122.58 MOps/s @ 0.03 ops/cycle
+
+Benchmarking [1m`affine_levenshtein_serial_unit:q7088xc7088:pairwise`[0m:
+> Throughput: 31.32 MiB/s @ 3.24 ms/call
+> Efficiency: 123.20 MOps/s @ 0.03 ops/cycle
+> [32m+ 0.5 %[0m against `levenshtein_serial_unit:q7088xc7088:pairwise`
+
+Benchmarking [1m`levenshtein_serial_unit:q7088xc7088:pairwise`[0m:
+> Throughput: 31.43 MiB/s @ 3.23 ms/call
+> Efficiency: 123.61 MOps/s @ 0.03 ops/cycle
+
+Benchmarking [1m`levenshtein_within_serial_k9:q7088xc7088:pairwise`[0m:
+> Throughput: 30.81 MiB/s @ 3.29 ms/call
+> Efficiency: 121.21 MOps/s @ 0.03 ops/cycle
+> [31m- 1.9 %[0m against `levenshtein_serial_unit:q7088xc7088:pairwise`
+
+Benchmarking [1m`levenshtein_within_haswell_k9:q7088xc7088:pairwise`[0m:
+> Throughput: 30.18 MiB/s @ 3.36 ms/call
+> Efficiency: 118.73 MOps/s @ 0.03 ops/cycle
+> [31m- 3.9 %[0m against `levenshtein_serial_unit:q7088xc7088:pairwise`
+
+Benchmarking [1m`levenshtein_within_icelake_k9:q7088xc7088:pairwise`[0m:
+> Throughput: 29.64 MiB/s @ 3.42 ms/call
+> Efficiency: 116.60 MOps/s @ 0.03 ops/cycle
+> [31m- 5.7 %[0m against `levenshtein_serial_unit:q7088xc7088:pairwise`
+All benchmarks finished.

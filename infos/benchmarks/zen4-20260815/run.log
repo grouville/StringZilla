@@ -1,0 +1,978 @@
+=== CPU flags ===
+avx2
+avx512f
+avx512vbmi
+(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 87251 files and directories currently installed.)
+Preparing to unpack .../dpkg_1.22.6ubuntu6.6_amd64.deb ...
+Unpacking dpkg (1.22.6ubuntu6.6) over (1.22.6ubuntu6.5) ...
+Setting up dpkg (1.22.6ubuntu6.6) ...
+(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 87251 files and directories currently installed.)
+Preparing to unpack .../0-libexpat1_2.6.1-2ubuntu0.4_amd64.deb ...
+Unpacking libexpat1:amd64 (2.6.1-2ubuntu0.4) over (2.6.1-2ubuntu0.3) ...
+Preparing to unpack .../1-libpython3.12t64_3.12.3-1ubuntu0.15_amd64.deb ...
+Unpacking libpython3.12t64:amd64 (3.12.3-1ubuntu0.15) over (3.12.3-1ubuntu0.8) ...
+Preparing to unpack .../2-python3.12_3.12.3-1ubuntu0.15_amd64.deb ...
+Unpacking python3.12 (3.12.3-1ubuntu0.15) over (3.12.3-1ubuntu0.8) ...
+Preparing to unpack .../3-libpython3.12-stdlib_3.12.3-1ubuntu0.15_amd64.deb ...
+Unpacking libpython3.12-stdlib:amd64 (3.12.3-1ubuntu0.15) over (3.12.3-1ubuntu0.8) ...
+Preparing to unpack .../4-python3.12-minimal_3.12.3-1ubuntu0.15_amd64.deb ...
+Unpacking python3.12-minimal (3.12.3-1ubuntu0.15) over (3.12.3-1ubuntu0.8) ...
+Preparing to unpack .../5-libpython3.12-minimal_3.12.3-1ubuntu0.15_amd64.deb ...
+Unpacking libpython3.12-minimal:amd64 (3.12.3-1ubuntu0.15) over (3.12.3-1ubuntu0.8) ...
+Preparing to unpack .../6-gcc-14-base_14.2.0-4ubuntu2~24.04.1_amd64.deb ...
+Unpacking gcc-14-base:amd64 (14.2.0-4ubuntu2~24.04.1) over (14.2.0-4ubuntu2~24.04) ...
+Setting up gcc-14-base:amd64 (14.2.0-4ubuntu2~24.04.1) ...
+(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 87251 files and directories currently installed.)
+Preparing to unpack .../libstdc++6_14.2.0-4ubuntu2~24.04.1_amd64.deb ...
+Unpacking libstdc++6:amd64 (14.2.0-4ubuntu2~24.04.1) over (14.2.0-4ubuntu2~24.04) ...
+Setting up libstdc++6:amd64 (14.2.0-4ubuntu2~24.04.1) ...
+(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 87251 files and directories currently installed.)
+Preparing to unpack .../libgcc-s1_14.2.0-4ubuntu2~24.04.1_amd64.deb ...
+Unpacking libgcc-s1:amd64 (14.2.0-4ubuntu2~24.04.1) over (14.2.0-4ubuntu2~24.04) ...
+Setting up libgcc-s1:amd64 (14.2.0-4ubuntu2~24.04.1) ...
+Selecting previously unselected package binutils-common:amd64.
+(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 87251 files and directories currently installed.)
+Preparing to unpack .../00-binutils-common_2.42-4ubuntu2.10_amd64.deb ...
+Unpacking binutils-common:amd64 (2.42-4ubuntu2.10) ...
+Selecting previously unselected package libsframe1:amd64.
+Preparing to unpack .../01-libsframe1_2.42-4ubuntu2.10_amd64.deb ...
+Unpacking libsframe1:amd64 (2.42-4ubuntu2.10) ...
+Selecting previously unselected package libbinutils:amd64.
+Preparing to unpack .../02-libbinutils_2.42-4ubuntu2.10_amd64.deb ...
+Unpacking libbinutils:amd64 (2.42-4ubuntu2.10) ...
+Selecting previously unselected package libctf-nobfd0:amd64.
+Preparing to unpack .../03-libctf-nobfd0_2.42-4ubuntu2.10_amd64.deb ...
+Unpacking libctf-nobfd0:amd64 (2.42-4ubuntu2.10) ...
+Selecting previously unselected package libctf0:amd64.
+Preparing to unpack .../04-libctf0_2.42-4ubuntu2.10_amd64.deb ...
+Unpacking libctf0:amd64 (2.42-4ubuntu2.10) ...
+Selecting previously unselected package libgprofng0:amd64.
+Preparing to unpack .../05-libgprofng0_2.42-4ubuntu2.10_amd64.deb ...
+Unpacking libgprofng0:amd64 (2.42-4ubuntu2.10) ...
+Selecting previously unselected package binutils-x86-64-linux-gnu.
+Preparing to unpack .../06-binutils-x86-64-linux-gnu_2.42-4ubuntu2.10_amd64.deb ...
+Unpacking binutils-x86-64-linux-gnu (2.42-4ubuntu2.10) ...
+Selecting previously unselected package binutils.
+Preparing to unpack .../07-binutils_2.42-4ubuntu2.10_amd64.deb ...
+Unpacking binutils (2.42-4ubuntu2.10) ...
+Selecting previously unselected package gcc-13-base:amd64.
+Preparing to unpack .../08-gcc-13-base_13.3.0-6ubuntu2~24.04.1_amd64.deb ...
+Unpacking gcc-13-base:amd64 (13.3.0-6ubuntu2~24.04.1) ...
+Selecting previously unselected package libisl23:amd64.
+Preparing to unpack .../09-libisl23_0.26-3build1.1_amd64.deb ...
+Unpacking libisl23:amd64 (0.26-3build1.1) ...
+Selecting previously unselected package libmpc3:amd64.
+Preparing to unpack .../10-libmpc3_1.3.1-1build1.1_amd64.deb ...
+Unpacking libmpc3:amd64 (1.3.1-1build1.1) ...
+Selecting previously unselected package cpp-13-x86-64-linux-gnu.
+Preparing to unpack .../11-cpp-13-x86-64-linux-gnu_13.3.0-6ubuntu2~24.04.1_amd64.deb ...
+Unpacking cpp-13-x86-64-linux-gnu (13.3.0-6ubuntu2~24.04.1) ...
+Selecting previously unselected package cpp-13.
+Preparing to unpack .../12-cpp-13_13.3.0-6ubuntu2~24.04.1_amd64.deb ...
+Unpacking cpp-13 (13.3.0-6ubuntu2~24.04.1) ...
+Selecting previously unselected package cpp-x86-64-linux-gnu.
+Preparing to unpack .../13-cpp-x86-64-linux-gnu_4%3a13.2.0-7ubuntu1_amd64.deb ...
+Unpacking cpp-x86-64-linux-gnu (4:13.2.0-7ubuntu1) ...
+Selecting previously unselected package cpp.
+Preparing to unpack .../14-cpp_4%3a13.2.0-7ubuntu1_amd64.deb ...
+Unpacking cpp (4:13.2.0-7ubuntu1) ...
+Selecting previously unselected package libcc1-0:amd64.
+Preparing to unpack .../15-libcc1-0_14.2.0-4ubuntu2~24.04.1_amd64.deb ...
+Unpacking libcc1-0:amd64 (14.2.0-4ubuntu2~24.04.1) ...
+Selecting previously unselected package libgomp1:amd64.
+Preparing to unpack .../16-libgomp1_14.2.0-4ubuntu2~24.04.1_amd64.deb ...
+Unpacking libgomp1:amd64 (14.2.0-4ubuntu2~24.04.1) ...
+Selecting previously unselected package libitm1:amd64.
+Preparing to unpack .../17-libitm1_14.2.0-4ubuntu2~24.04.1_amd64.deb ...
+Unpacking libitm1:amd64 (14.2.0-4ubuntu2~24.04.1) ...
+Selecting previously unselected package libatomic1:amd64.
+Preparing to unpack .../18-libatomic1_14.2.0-4ubuntu2~24.04.1_amd64.deb ...
+Unpacking libatomic1:amd64 (14.2.0-4ubuntu2~24.04.1) ...
+Selecting previously unselected package libasan8:amd64.
+Preparing to unpack .../19-libasan8_14.2.0-4ubuntu2~24.04.1_amd64.deb ...
+Unpacking libasan8:amd64 (14.2.0-4ubuntu2~24.04.1) ...
+Selecting previously unselected package liblsan0:amd64.
+Preparing to unpack .../20-liblsan0_14.2.0-4ubuntu2~24.04.1_amd64.deb ...
+Unpacking liblsan0:amd64 (14.2.0-4ubuntu2~24.04.1) ...
+Selecting previously unselected package libtsan2:amd64.
+Preparing to unpack .../21-libtsan2_14.2.0-4ubuntu2~24.04.1_amd64.deb ...
+Unpacking libtsan2:amd64 (14.2.0-4ubuntu2~24.04.1) ...
+Selecting previously unselected package libubsan1:amd64.
+Preparing to unpack .../22-libubsan1_14.2.0-4ubuntu2~24.04.1_amd64.deb ...
+Unpacking libubsan1:amd64 (14.2.0-4ubuntu2~24.04.1) ...
+Selecting previously unselected package libhwasan0:amd64.
+Preparing to unpack .../23-libhwasan0_14.2.0-4ubuntu2~24.04.1_amd64.deb ...
+Unpacking libhwasan0:amd64 (14.2.0-4ubuntu2~24.04.1) ...
+Selecting previously unselected package libquadmath0:amd64.
+Preparing to unpack .../24-libquadmath0_14.2.0-4ubuntu2~24.04.1_amd64.deb ...
+Unpacking libquadmath0:amd64 (14.2.0-4ubuntu2~24.04.1) ...
+Selecting previously unselected package libgcc-13-dev:amd64.
+Preparing to unpack .../25-libgcc-13-dev_13.3.0-6ubuntu2~24.04.1_amd64.deb ...
+Unpacking libgcc-13-dev:amd64 (13.3.0-6ubuntu2~24.04.1) ...
+Selecting previously unselected package gcc-13-x86-64-linux-gnu.
+Preparing to unpack .../26-gcc-13-x86-64-linux-gnu_13.3.0-6ubuntu2~24.04.1_amd64.deb ...
+Unpacking gcc-13-x86-64-linux-gnu (13.3.0-6ubuntu2~24.04.1) ...
+Selecting previously unselected package gcc-13.
+Preparing to unpack .../27-gcc-13_13.3.0-6ubuntu2~24.04.1_amd64.deb ...
+Unpacking gcc-13 (13.3.0-6ubuntu2~24.04.1) ...
+Selecting previously unselected package gcc-x86-64-linux-gnu.
+Preparing to unpack .../28-gcc-x86-64-linux-gnu_4%3a13.2.0-7ubuntu1_amd64.deb ...
+Unpacking gcc-x86-64-linux-gnu (4:13.2.0-7ubuntu1) ...
+Selecting previously unselected package gcc.
+Preparing to unpack .../29-gcc_4%3a13.2.0-7ubuntu1_amd64.deb ...
+Unpacking gcc (4:13.2.0-7ubuntu1) ...
+Selecting previously unselected package libstdc++-13-dev:amd64.
+Preparing to unpack .../30-libstdc++-13-dev_13.3.0-6ubuntu2~24.04.1_amd64.deb ...
+Unpacking libstdc++-13-dev:amd64 (13.3.0-6ubuntu2~24.04.1) ...
+Selecting previously unselected package g++-13-x86-64-linux-gnu.
+Preparing to unpack .../31-g++-13-x86-64-linux-gnu_13.3.0-6ubuntu2~24.04.1_amd64.deb ...
+Unpacking g++-13-x86-64-linux-gnu (13.3.0-6ubuntu2~24.04.1) ...
+Selecting previously unselected package g++-13.
+Preparing to unpack .../32-g++-13_13.3.0-6ubuntu2~24.04.1_amd64.deb ...
+Unpacking g++-13 (13.3.0-6ubuntu2~24.04.1) ...
+Selecting previously unselected package g++-x86-64-linux-gnu.
+Preparing to unpack .../33-g++-x86-64-linux-gnu_4%3a13.2.0-7ubuntu1_amd64.deb ...
+Unpacking g++-x86-64-linux-gnu (4:13.2.0-7ubuntu1) ...
+Selecting previously unselected package g++.
+Preparing to unpack .../34-g++_4%3a13.2.0-7ubuntu1_amd64.deb ...
+Unpacking g++ (4:13.2.0-7ubuntu1) ...
+Selecting previously unselected package make.
+Preparing to unpack .../35-make_4.3-4.1build2_amd64.deb ...
+Unpacking make (4.3-4.1build2) ...
+Selecting previously unselected package libdpkg-perl.
+Preparing to unpack .../36-libdpkg-perl_1.22.6ubuntu6.6_all.deb ...
+Unpacking libdpkg-perl (1.22.6ubuntu6.6) ...
+Selecting previously unselected package bzip2.
+Preparing to unpack .../37-bzip2_1.0.8-5.1build0.1_amd64.deb ...
+Unpacking bzip2 (1.0.8-5.1build0.1) ...
+Selecting previously unselected package lto-disabled-list.
+Preparing to unpack .../38-lto-disabled-list_47_all.deb ...
+Unpacking lto-disabled-list (47) ...
+Selecting previously unselected package dpkg-dev.
+Preparing to unpack .../39-dpkg-dev_1.22.6ubuntu6.6_all.deb ...
+Unpacking dpkg-dev (1.22.6ubuntu6.6) ...
+Selecting previously unselected package build-essential.
+Preparing to unpack .../40-build-essential_12.10ubuntu1_amd64.deb ...
+Unpacking build-essential (12.10ubuntu1) ...
+Selecting previously unselected package libfakeroot:amd64.
+Preparing to unpack .../41-libfakeroot_1.33-1_amd64.deb ...
+Unpacking libfakeroot:amd64 (1.33-1) ...
+Selecting previously unselected package fakeroot.
+Preparing to unpack .../42-fakeroot_1.33-1_amd64.deb ...
+Unpacking fakeroot (1.33-1) ...
+Selecting previously unselected package javascript-common.
+Preparing to unpack .../43-javascript-common_11+nmu1_all.deb ...
+Unpacking javascript-common (11+nmu1) ...
+Selecting previously unselected package libalgorithm-diff-perl.
+Preparing to unpack .../44-libalgorithm-diff-perl_1.201-1_all.deb ...
+Unpacking libalgorithm-diff-perl (1.201-1) ...
+Selecting previously unselected package libalgorithm-diff-xs-perl:amd64.
+Preparing to unpack .../45-libalgorithm-diff-xs-perl_0.04-8build3_amd64.deb ...
+Unpacking libalgorithm-diff-xs-perl:amd64 (0.04-8build3) ...
+Selecting previously unselected package libalgorithm-merge-perl.
+Preparing to unpack .../46-libalgorithm-merge-perl_0.08-5_all.deb ...
+Unpacking libalgorithm-merge-perl (0.08-5) ...
+Selecting previously unselected package libexpat1-dev:amd64.
+Preparing to unpack .../47-libexpat1-dev_2.6.1-2ubuntu0.4_amd64.deb ...
+Unpacking libexpat1-dev:amd64 (2.6.1-2ubuntu0.4) ...
+Selecting previously unselected package libfile-fcntllock-perl.
+Preparing to unpack .../48-libfile-fcntllock-perl_0.22-4ubuntu5_amd64.deb ...
+Unpacking libfile-fcntllock-perl (0.22-4ubuntu5) ...
+Selecting previously unselected package libjs-jquery.
+Preparing to unpack .../49-libjs-jquery_3.6.1+dfsg+~3.5.14-1_all.deb ...
+Unpacking libjs-jquery (3.6.1+dfsg+~3.5.14-1) ...
+Selecting previously unselected package libjs-underscore.
+Preparing to unpack .../50-libjs-underscore_1.13.4~dfsg+~1.11.4-3_all.deb ...
+Unpacking libjs-underscore (1.13.4~dfsg+~1.11.4-3) ...
+Selecting previously unselected package libjs-sphinxdoc.
+Preparing to unpack .../51-libjs-sphinxdoc_7.2.6-6_all.deb ...
+Unpacking libjs-sphinxdoc (7.2.6-6) ...
+Selecting previously unselected package zlib1g-dev:amd64.
+Preparing to unpack .../52-zlib1g-dev_1%3a1.3.dfsg-3.1ubuntu2.1_amd64.deb ...
+Unpacking zlib1g-dev:amd64 (1:1.3.dfsg-3.1ubuntu2.1) ...
+Selecting previously unselected package libpython3.12-dev:amd64.
+Preparing to unpack .../53-libpython3.12-dev_3.12.3-1ubuntu0.15_amd64.deb ...
+Unpacking libpython3.12-dev:amd64 (3.12.3-1ubuntu0.15) ...
+Selecting previously unselected package libpython3-dev:amd64.
+Preparing to unpack .../54-libpython3-dev_3.12.3-0ubuntu2.1_amd64.deb ...
+Unpacking libpython3-dev:amd64 (3.12.3-0ubuntu2.1) ...
+Selecting previously unselected package python3.12-dev.
+Preparing to unpack .../55-python3.12-dev_3.12.3-1ubuntu0.15_amd64.deb ...
+Unpacking python3.12-dev (3.12.3-1ubuntu0.15) ...
+Selecting previously unselected package python3-dev.
+Preparing to unpack .../56-python3-dev_3.12.3-0ubuntu2.1_amd64.deb ...
+Unpacking python3-dev (3.12.3-0ubuntu2.1) ...
+Selecting previously unselected package python3-wheel.
+Preparing to unpack .../57-python3-wheel_0.42.0-2_all.deb ...
+Unpacking python3-wheel (0.42.0-2) ...
+Selecting previously unselected package python3-pip.
+Preparing to unpack .../58-python3-pip_24.0+dfsg-1ubuntu1.3_all.deb ...
+Unpacking python3-pip (24.0+dfsg-1ubuntu1.3) ...
+Selecting previously unselected package python3-pip-whl.
+Preparing to unpack .../59-python3-pip-whl_24.0+dfsg-1ubuntu1.3_all.deb ...
+Unpacking python3-pip-whl (24.0+dfsg-1ubuntu1.3) ...
+Selecting previously unselected package python3-setuptools-whl.
+Preparing to unpack .../60-python3-setuptools-whl_68.1.2-2ubuntu1.2_all.deb ...
+Unpacking python3-setuptools-whl (68.1.2-2ubuntu1.2) ...
+Selecting previously unselected package python3.12-venv.
+Preparing to unpack .../61-python3.12-venv_3.12.3-1ubuntu0.15_amd64.deb ...
+Unpacking python3.12-venv (3.12.3-1ubuntu0.15) ...
+Selecting previously unselected package python3-venv.
+Preparing to unpack .../62-python3-venv_3.12.3-0ubuntu2.1_amd64.deb ...
+Unpacking python3-venv (3.12.3-0ubuntu2.1) ...
+Setting up libexpat1:amd64 (2.6.1-2ubuntu0.4) ...
+Setting up javascript-common (11+nmu1) ...
+Setting up python3-setuptools-whl (68.1.2-2ubuntu1.2) ...
+Setting up lto-disabled-list (47) ...
+Setting up libfile-fcntllock-perl (0.22-4ubuntu5) ...
+Setting up python3-pip-whl (24.0+dfsg-1ubuntu1.3) ...
+Setting up libalgorithm-diff-perl (1.201-1) ...
+Setting up libpython3.12-minimal:amd64 (3.12.3-1ubuntu0.15) ...
+Setting up binutils-common:amd64 (2.42-4ubuntu2.10) ...
+Setting up libctf-nobfd0:amd64 (2.42-4ubuntu2.10) ...
+Setting up libgomp1:amd64 (14.2.0-4ubuntu2~24.04.1) ...
+Setting up bzip2 (1.0.8-5.1build0.1) ...
+Setting up python3-wheel (0.42.0-2) ...
+Setting up libsframe1:amd64 (2.42-4ubuntu2.10) ...
+Setting up libfakeroot:amd64 (1.33-1) ...
+Setting up fakeroot (1.33-1) ...
+update-alternatives: using /usr/bin/fakeroot-sysv to provide /usr/bin/fakeroot (fakeroot) in auto mode
+Setting up gcc-13-base:amd64 (13.3.0-6ubuntu2~24.04.1) ...
+Setting up libexpat1-dev:amd64 (2.6.1-2ubuntu0.4) ...
+Setting up make (4.3-4.1build2) ...
+Setting up libquadmath0:amd64 (14.2.0-4ubuntu2~24.04.1) ...
+Setting up libmpc3:amd64 (1.3.1-1build1.1) ...
+Setting up libatomic1:amd64 (14.2.0-4ubuntu2~24.04.1) ...
+Setting up python3-pip (24.0+dfsg-1ubuntu1.3) ...
+Setting up libdpkg-perl (1.22.6ubuntu6.6) ...
+Setting up libubsan1:amd64 (14.2.0-4ubuntu2~24.04.1) ...
+Setting up zlib1g-dev:amd64 (1:1.3.dfsg-3.1ubuntu2.1) ...
+Setting up libhwasan0:amd64 (14.2.0-4ubuntu2~24.04.1) ...
+Setting up libasan8:amd64 (14.2.0-4ubuntu2~24.04.1) ...
+Setting up libtsan2:amd64 (14.2.0-4ubuntu2~24.04.1) ...
+Setting up libjs-jquery (3.6.1+dfsg+~3.5.14-1) ...
+Setting up libbinutils:amd64 (2.42-4ubuntu2.10) ...
+Setting up libisl23:amd64 (0.26-3build1.1) ...
+Setting up libalgorithm-diff-xs-perl:amd64 (0.04-8build3) ...
+Setting up libcc1-0:amd64 (14.2.0-4ubuntu2~24.04.1) ...
+Setting up liblsan0:amd64 (14.2.0-4ubuntu2~24.04.1) ...
+Setting up libitm1:amd64 (14.2.0-4ubuntu2~24.04.1) ...
+Setting up libjs-underscore (1.13.4~dfsg+~1.11.4-3) ...
+Setting up libalgorithm-merge-perl (0.08-5) ...
+Setting up libctf0:amd64 (2.42-4ubuntu2.10) ...
+Setting up python3.12-minimal (3.12.3-1ubuntu0.15) ...
+Setting up libpython3.12-stdlib:amd64 (3.12.3-1ubuntu0.15) ...
+Setting up cpp-13-x86-64-linux-gnu (13.3.0-6ubuntu2~24.04.1) ...
+Setting up python3.12 (3.12.3-1ubuntu0.15) ...
+Setting up libpython3.12t64:amd64 (3.12.3-1ubuntu0.15) ...
+Setting up libgprofng0:amd64 (2.42-4ubuntu2.10) ...
+Setting up libjs-sphinxdoc (7.2.6-6) ...
+Setting up libgcc-13-dev:amd64 (13.3.0-6ubuntu2~24.04.1) ...
+Setting up libstdc++-13-dev:amd64 (13.3.0-6ubuntu2~24.04.1) ...
+Setting up binutils-x86-64-linux-gnu (2.42-4ubuntu2.10) ...
+Setting up cpp-x86-64-linux-gnu (4:13.2.0-7ubuntu1) ...
+Setting up cpp-13 (13.3.0-6ubuntu2~24.04.1) ...
+Setting up python3.12-venv (3.12.3-1ubuntu0.15) ...
+Setting up gcc-13-x86-64-linux-gnu (13.3.0-6ubuntu2~24.04.1) ...
+Setting up libpython3.12-dev:amd64 (3.12.3-1ubuntu0.15) ...
+Setting up binutils (2.42-4ubuntu2.10) ...
+Setting up dpkg-dev (1.22.6ubuntu6.6) ...
+Setting up python3-venv (3.12.3-0ubuntu2.1) ...
+Setting up gcc-13 (13.3.0-6ubuntu2~24.04.1) ...
+Setting up python3.12-dev (3.12.3-1ubuntu0.15) ...
+Setting up cpp (4:13.2.0-7ubuntu1) ...
+Setting up libpython3-dev:amd64 (3.12.3-0ubuntu2.1) ...
+Setting up g++-13-x86-64-linux-gnu (13.3.0-6ubuntu2~24.04.1) ...
+Setting up gcc-x86-64-linux-gnu (4:13.2.0-7ubuntu1) ...
+Setting up gcc (4:13.2.0-7ubuntu1) ...
+Setting up python3-dev (3.12.3-0ubuntu2.1) ...
+Setting up g++-x86-64-linux-gnu (4:13.2.0-7ubuntu1) ...
+Setting up g++-13 (13.3.0-6ubuntu2~24.04.1) ...
+Setting up g++ (4:13.2.0-7ubuntu1) ...
+update-alternatives: using /usr/bin/g++ to provide /usr/bin/c++ (c++) in auto mode
+Setting up build-essential (12.10ubuntu1) ...
+Processing triggers for systemd (255.4-1ubuntu8.11) ...
+Processing triggers for man-db (2.12.0-4build2) ...
+Processing triggers for libc-bin (2.39-0ubuntu8.6) ...
+
+Running kernel seems to be up-to-date.
+
+The processor microcode seems to be up-to-date.
+
+Restarting services...
+ systemctl restart esm-cache.service multipathd.service packagekit.service polkit.service
+
+Service restarts being deferred:
+ /etc/needrestart/restart.d/dbus.service
+ systemctl restart unattended-upgrades.service
+
+No containers need to be restarted.
+
+User sessions running outdated binaries:
+ ubuntu @ user manager service: systemd[1446]
+
+No VM guests are running outdated hypervisor (qemu) binaries on this host.
+Cloning into 'StringZilla'...
+Submodule path 'forkunion': checked out '7f52520ea00a6bf8e7a1f46348dad345ba361096'
+=== Building C++ bench + fuzzer (native) ===
+=== Building dataset (3M random word tokens) ===
+25502130 /tmp/dataset.txt
+=== Native icelake fuzzer: exhaustive + random + batch ===
+OK: exhaustive sweep, 715275 checks over 255 strings
+OK: 3000000 checks (780708 accepted, 26.0%) over 300000 random pairs
+OK: 385997400 batch checks (157139088 accepted, 40.7%) over 100000 random collections
+OK: 19513240 batch checks (6657252 accepted, 34.1%) over 5000 random collections [long strings]
+=== Native (auto-dispatch) fuzzer smoke ===
+OK: 1000000 checks (260637 accepted, 26.1%) over 100000 random pairs
+OK: 77295560 batch checks (31529928 accepted, 40.8%) over 20000 random collections
+=== Perf sweep: within-k vs full-distance baseline ===
+Welcome to StringZillas on CPU!
+- Uses Westmere: yes
+- Uses Goldmont: yes
+- Uses Haswell: yes
+- Uses Skylake: yes
+- Uses Ice Lake: yes
+- Uses NEON: no
+- Uses NEON AES: no
+- Uses NEON SHA: no
+- Uses SVE: no
+- Uses SVE2: no
+- Uses SVE2 AES: no
+- Uses WASM SIMD128: no
+- Uses WASM relaxed SIMD: no
+- Uses RISC-V RVV: no
+- Uses LoongArch LASX: no
+- Uses Power VSX: no
+- Uses CUDA: no
+- Uses Kepler CUDA: no
+- Uses Hopper CUDA: no
+Building up the environment...
+Environment built with the following settings:
+ - Dataset path: /tmp/dataset.txt
+ - Time limit: 2 seconds per benchmark (10 per stress-test)
+ - Algorithm filter: levenshtein_within|levenshtein_serial_unit
+ - Tokenization mode: word
+ - Seed: 0 (will avoid shuffling)
+ - Stress-testing: yes
+ - Unique tokens: no
+ - Loaded dataset size: 16777216 bytes
+ - Number of tokens: 1048576
+ - Mean token length: 7.50 bytes
+Starting string similarity benchmarks...
+
+Benchmarking [1m`levenshtein_serial_unit:q1xc524288:allpairs`[0m:
+> Throughput: 1.94 GiB/s @ 3.77 ms/call
+> Efficiency: 7.82 GOps/s @ 2.00 ops/cycle
+
+Benchmarking [1m`affine_levenshtein_serial_unit:q1xc524288:allpairs`[0m:
+> Throughput: 1.81 GiB/s @ 4.05 ms/call
+> Efficiency: 7.28 GOps/s @ 1.87 ops/cycle
+> [31m- 6.9 %[0m against `levenshtein_serial_unit:q1xc524288:allpairs`
+
+Benchmarking [1m`levenshtein_serial_unit:q1xc1:pairwise`[0m:
+> Throughput: 11.62 MiB/s @ 1.23 us/call
+> Efficiency: 45.71 MOps/s @ 0.01 ops/cycle
+
+Benchmarking [1m`affine_levenshtein_serial_unit:q1xc1:pairwise`[0m:
+> Throughput: 11.47 MiB/s @ 1.25 us/call
+> Efficiency: 45.10 MOps/s @ 0.01 ops/cycle
+> [31m- 1.3 %[0m against `levenshtein_serial_unit:q1xc1:pairwise`
+
+Benchmarking [1m`levenshtein_serial_unit:q110xc7149:allpairs`[0m:
+> Throughput: 1.93 GiB/s @ 5.68 ms/call
+> Efficiency: 7.77 GOps/s @ 1.99 ops/cycle
+
+Benchmarking [1m`affine_levenshtein_serial_unit:q110xc7149:allpairs`[0m:
+> Throughput: 1.80 GiB/s @ 6.10 ms/call
+> Efficiency: 7.23 GOps/s @ 1.85 ops/cycle
+> [31m- 6.9 %[0m against `levenshtein_serial_unit:q110xc7149:allpairs`
+
+Benchmarking [1m`levenshtein_serial_unit:q110xc110:pairwise`[0m:
+> Throughput: 29.81 MiB/s @ 52.78 us/call
+> Efficiency: 117.25 MOps/s @ 0.03 ops/cycle
+
+Benchmarking [1m`affine_levenshtein_serial_unit:q110xc110:pairwise`[0m:
+> Throughput: 30.95 MiB/s @ 50.85 us/call
+> Efficiency: 121.72 MOps/s @ 0.03 ops/cycle
+> [32m+ 3.8 %[0m against `levenshtein_serial_unit:q110xc110:pairwise`
+
+Benchmarking [1m`levenshtein_serial_unit:q886xc887:allpairs`[0m:
+> Throughput: 1.96 GiB/s @ 5.62 ms/call
+> Efficiency: 7.88 GOps/s @ 2.02 ops/cycle
+
+Benchmarking [1m`affine_levenshtein_serial_unit:q886xc887:allpairs`[0m:
+> Throughput: 1.82 GiB/s @ 6.02 ms/call
+> Efficiency: 7.35 GOps/s @ 1.89 ops/cycle
+> [31m- 6.7 %[0m against `levenshtein_serial_unit:q886xc887:allpairs`
+
+Benchmarking [1m`levenshtein_serial_unit:q886xc886:pairwise`[0m:
+> Throughput: 30.17 MiB/s @ 420.19 us/call
+> Efficiency: 118.64 MOps/s @ 0.03 ops/cycle
+
+Benchmarking [1m`affine_levenshtein_serial_unit:q886xc886:pairwise`[0m:
+> Throughput: 31.38 MiB/s @ 403.96 us/call
+> Efficiency: 123.40 MOps/s @ 0.03 ops/cycle
+> [32m+ 4.0 %[0m against `levenshtein_serial_unit:q886xc886:pairwise`
+
+Benchmarking [1m`levenshtein_serial_unit:q7088xc110:allpairs`[0m:
+> Throughput: 2.02 GiB/s @ 5.40 ms/call
+> Efficiency: 8.15 GOps/s @ 2.09 ops/cycle
+
+Benchmarking [1m`affine_levenshtein_serial_unit:q7088xc110:allpairs`[0m:
+> Throughput: 1.84 GiB/s @ 5.92 ms/call
+> Efficiency: 7.43 GOps/s @ 1.90 ops/cycle
+> [31m- 8.9 %[0m against `levenshtein_serial_unit:q7088xc110:allpairs`
+
+Benchmarking [1m`levenshtein_serial_unit:q7088xc7088:pairwise`[0m:
+> Throughput: 29.87 MiB/s @ 3.40 ms/call
+> Efficiency: 117.49 MOps/s @ 0.03 ops/cycle
+
+Benchmarking [1m`affine_levenshtein_serial_unit:q7088xc7088:pairwise`[0m:
+> Throughput: 31.12 MiB/s @ 3.26 ms/call
+> Efficiency: 122.41 MOps/s @ 0.03 ops/cycle
+> [32m+ 4.2 %[0m against `levenshtein_serial_unit:q7088xc7088:pairwise`
+
+Benchmarking [1m`levenshtein_serial_unit:q1xc524288:allpairs`[0m:
+> Throughput: 1.94 GiB/s @ 3.77 ms/call
+> Efficiency: 7.81 GOps/s @ 2.00 ops/cycle
+
+Benchmarking [1m`levenshtein_within_serial_k1:q1xc524288:allpairs`[0m:
+> Throughput: 3.24 GiB/s @ 2.25 ms/call
+> Efficiency: 13.00 GOps/s @ 3.33 ops/cycle
+> [32m+ 66.5 %[0m against `levenshtein_serial_unit:q1xc524288:allpairs`
+
+Benchmarking [1m`levenshtein_within_serial_k2:q1xc524288:allpairs`[0m:
+> Throughput: 2.68 GiB/s @ 2.71 ms/call
+> Efficiency: 10.74 GOps/s @ 2.75 ops/cycle
+> [32m+ 37.5 %[0m against `levenshtein_serial_unit:q1xc524288:allpairs`
+
+Benchmarking [1m`levenshtein_within_serial_k3:q1xc524288:allpairs`[0m:
+> Throughput: 2.43 GiB/s @ 3.00 ms/call
+> Efficiency: 9.75 GOps/s @ 2.50 ops/cycle
+> [32m+ 24.8 %[0m against `levenshtein_serial_unit:q1xc524288:allpairs`
+
+Benchmarking [1m`levenshtein_within_serial_k9:q1xc524288:allpairs`[0m:
+> Throughput: 2.29 GiB/s @ 3.19 ms/call
+> Efficiency: 9.23 GOps/s @ 2.37 ops/cycle
+> [32m+ 18.2 %[0m against `levenshtein_serial_unit:q1xc524288:allpairs`
+
+Benchmarking [1m`levenshtein_within_haswell_k1:q1xc524288:allpairs`[0m:
+> Throughput: 5.90 GiB/s @ 1.24 ms/call
+> Efficiency: 23.65 GOps/s @ 6.07 ops/cycle
+> [32m+ 3.0 x[0m against `levenshtein_serial_unit:q1xc524288:allpairs`
+
+Benchmarking [1m`levenshtein_within_haswell_k2:q1xc524288:allpairs`[0m:
+> Throughput: 4.40 GiB/s @ 1.66 ms/call
+> Efficiency: 17.64 GOps/s @ 4.52 ops/cycle
+> [32m+ 2.3 x[0m against `levenshtein_serial_unit:q1xc524288:allpairs`
+
+Benchmarking [1m`levenshtein_within_haswell_k3:q1xc524288:allpairs`[0m:
+> Throughput: 3.77 GiB/s @ 1.93 ms/call
+> Efficiency: 15.11 GOps/s @ 3.87 ops/cycle
+> [32m+ 93.4 %[0m against `levenshtein_serial_unit:q1xc524288:allpairs`
+
+Benchmarking [1m`levenshtein_within_haswell_k9:q1xc524288:allpairs`[0m:
+> Throughput: 2.76 GiB/s @ 2.64 ms/call
+> Efficiency: 11.03 GOps/s @ 2.83 ops/cycle
+> [32m+ 41.2 %[0m against `levenshtein_serial_unit:q1xc524288:allpairs`
+
+Benchmarking [1m`levenshtein_within_icelake_k1:q1xc524288:allpairs`[0m:
+> Throughput: 6.04 GiB/s @ 1.21 ms/call
+> Efficiency: 24.25 GOps/s @ 6.22 ops/cycle
+> [32m+ 3.1 x[0m against `levenshtein_serial_unit:q1xc524288:allpairs`
+
+Benchmarking [1m`levenshtein_within_icelake_k2:q1xc524288:allpairs`[0m:
+> Throughput: 4.60 GiB/s @ 1.59 ms/call
+> Efficiency: 18.44 GOps/s @ 4.73 ops/cycle
+> [32m+ 2.4 x[0m against `levenshtein_serial_unit:q1xc524288:allpairs`
+
+Benchmarking [1m`levenshtein_within_icelake_k3:q1xc524288:allpairs`[0m:
+> Throughput: 4.00 GiB/s @ 1.82 ms/call
+> Efficiency: 16.05 GOps/s @ 4.12 ops/cycle
+> [32m+ 2.1 x[0m against `levenshtein_serial_unit:q1xc524288:allpairs`
+
+Benchmarking [1m`levenshtein_within_icelake_k9:q1xc524288:allpairs`[0m:
+> Throughput: 3.54 GiB/s @ 2.06 ms/call
+> Efficiency: 14.18 GOps/s @ 3.64 ops/cycle
+> [32m+ 81.6 %[0m against `levenshtein_serial_unit:q1xc524288:allpairs`
+
+Benchmarking [1m`levenshtein_serial_unit:q1xc1:pairwise`[0m:
+> Throughput: 11.46 MiB/s @ 1.25 us/call
+> Efficiency: 45.05 MOps/s @ 0.01 ops/cycle
+
+Benchmarking [1m`levenshtein_within_serial_k1:q1xc1:pairwise`[0m:
+> Throughput: 11.55 MiB/s @ 1.24 us/call
+> Efficiency: 45.41 MOps/s @ 0.01 ops/cycle
+> [32m+ 0.8 %[0m against `levenshtein_serial_unit:q1xc1:pairwise`
+
+Benchmarking [1m`levenshtein_within_serial_k2:q1xc1:pairwise`[0m:
+> Throughput: 11.75 MiB/s @ 1.22 us/call
+> Efficiency: 46.21 MOps/s @ 0.01 ops/cycle
+> [32m+ 2.6 %[0m against `levenshtein_serial_unit:q1xc1:pairwise`
+
+Benchmarking [1m`levenshtein_within_serial_k3:q1xc1:pairwise`[0m:
+> Throughput: 11.59 MiB/s @ 1.23 us/call
+> Efficiency: 45.59 MOps/s @ 0.01 ops/cycle
+> [32m+ 1.2 %[0m against `levenshtein_serial_unit:q1xc1:pairwise`
+
+Benchmarking [1m`levenshtein_within_serial_k9:q1xc1:pairwise`[0m:
+> Throughput: 11.29 MiB/s @ 1.27 us/call
+> Efficiency: 44.38 MOps/s @ 0.01 ops/cycle
+> [31m- 1.5 %[0m against `levenshtein_serial_unit:q1xc1:pairwise`
+
+Benchmarking [1m`levenshtein_within_haswell_k1:q1xc1:pairwise`[0m:
+> Throughput: 11.32 MiB/s @ 1.26 us/call
+> Efficiency: 44.51 MOps/s @ 0.01 ops/cycle
+> [31m- 1.2 %[0m against `levenshtein_serial_unit:q1xc1:pairwise`
+
+Benchmarking [1m`levenshtein_within_haswell_k2:q1xc1:pairwise`[0m:
+> Throughput: 11.61 MiB/s @ 1.23 us/call
+> Efficiency: 45.64 MOps/s @ 0.01 ops/cycle
+> [32m+ 1.3 %[0m against `levenshtein_serial_unit:q1xc1:pairwise`
+
+Benchmarking [1m`levenshtein_within_haswell_k3:q1xc1:pairwise`[0m:
+> Throughput: 11.39 MiB/s @ 1.26 us/call
+> Efficiency: 44.77 MOps/s @ 0.01 ops/cycle
+> [31m- 0.6 %[0m against `levenshtein_serial_unit:q1xc1:pairwise`
+
+Benchmarking [1m`levenshtein_within_haswell_k9:q1xc1:pairwise`[0m:
+> Throughput: 11.66 MiB/s @ 1.23 us/call
+> Efficiency: 45.85 MOps/s @ 0.01 ops/cycle
+> [32m+ 1.8 %[0m against `levenshtein_serial_unit:q1xc1:pairwise`
+
+Benchmarking [1m`levenshtein_within_icelake_k1:q1xc1:pairwise`[0m:
+> Throughput: 11.81 MiB/s @ 1.21 us/call
+> Efficiency: 46.43 MOps/s @ 0.01 ops/cycle
+> [32m+ 3.1 %[0m against `levenshtein_serial_unit:q1xc1:pairwise`
+
+Benchmarking [1m`levenshtein_within_icelake_k2:q1xc1:pairwise`[0m:
+> Throughput: 11.57 MiB/s @ 1.24 us/call
+> Efficiency: 45.51 MOps/s @ 0.01 ops/cycle
+> [32m+ 1.0 %[0m against `levenshtein_serial_unit:q1xc1:pairwise`
+
+Benchmarking [1m`levenshtein_within_icelake_k3:q1xc1:pairwise`[0m:
+> Throughput: 11.53 MiB/s @ 1.24 us/call
+> Efficiency: 45.34 MOps/s @ 0.01 ops/cycle
+> [32m+ 0.6 %[0m against `levenshtein_serial_unit:q1xc1:pairwise`
+
+Benchmarking [1m`levenshtein_within_icelake_k9:q1xc1:pairwise`[0m:
+> Throughput: 11.45 MiB/s @ 1.25 us/call
+> Efficiency: 45.02 MOps/s @ 0.01 ops/cycle
+> [31m- 0.1 %[0m against `levenshtein_serial_unit:q1xc1:pairwise`
+
+Benchmarking [1m`levenshtein_serial_unit:q110xc7149:allpairs`[0m:
+> Throughput: 1.93 GiB/s @ 5.70 ms/call
+> Efficiency: 7.75 GOps/s @ 1.99 ops/cycle
+
+Benchmarking [1m`levenshtein_within_serial_k1:q110xc7149:allpairs`[0m:
+> Throughput: 3.16 GiB/s @ 3.48 ms/call
+> Efficiency: 12.71 GOps/s @ 3.26 ops/cycle
+> [32m+ 64.0 %[0m against `levenshtein_serial_unit:q110xc7149:allpairs`
+
+Benchmarking [1m`levenshtein_within_serial_k2:q110xc7149:allpairs`[0m:
+> Throughput: 2.59 GiB/s @ 4.24 ms/call
+> Efficiency: 10.42 GOps/s @ 2.67 ops/cycle
+> [32m+ 34.5 %[0m against `levenshtein_serial_unit:q110xc7149:allpairs`
+
+Benchmarking [1m`levenshtein_within_serial_k3:q110xc7149:allpairs`[0m:
+> Throughput: 2.32 GiB/s @ 4.73 ms/call
+> Efficiency: 9.33 GOps/s @ 2.39 ops/cycle
+> [32m+ 20.5 %[0m against `levenshtein_serial_unit:q110xc7149:allpairs`
+
+Benchmarking [1m`levenshtein_within_serial_k9:q110xc7149:allpairs`[0m:
+> Throughput: 2.14 GiB/s @ 5.14 ms/call
+> Efficiency: 8.60 GOps/s @ 2.21 ops/cycle
+> [32m+ 11.0 %[0m against `levenshtein_serial_unit:q110xc7149:allpairs`
+
+Benchmarking [1m`levenshtein_within_haswell_k1:q110xc7149:allpairs`[0m:
+> Throughput: 6.90 GiB/s @ 1.59 ms/call
+> Efficiency: 27.76 GOps/s @ 7.12 ops/cycle
+> [32m+ 3.6 x[0m against `levenshtein_serial_unit:q110xc7149:allpairs`
+
+Benchmarking [1m`levenshtein_within_haswell_k2:q110xc7149:allpairs`[0m:
+> Throughput: 4.84 GiB/s @ 2.27 ms/call
+> Efficiency: 19.46 GOps/s @ 4.99 ops/cycle
+> [32m+ 2.5 x[0m against `levenshtein_serial_unit:q110xc7149:allpairs`
+
+Benchmarking [1m`levenshtein_within_haswell_k3:q110xc7149:allpairs`[0m:
+> Throughput: 4.01 GiB/s @ 2.74 ms/call
+> Efficiency: 16.13 GOps/s @ 4.14 ops/cycle
+> [32m+ 2.1 x[0m against `levenshtein_serial_unit:q110xc7149:allpairs`
+
+Benchmarking [1m`levenshtein_within_haswell_k9:q110xc7149:allpairs`[0m:
+> Throughput: 2.91 GiB/s @ 3.78 ms/call
+> Efficiency: 11.71 GOps/s @ 3.00 ops/cycle
+> [32m+ 51.2 %[0m against `levenshtein_serial_unit:q110xc7149:allpairs`
+
+Benchmarking [1m`levenshtein_within_icelake_k1:q110xc7149:allpairs`[0m:
+> Throughput: 7.11 GiB/s @ 1.54 ms/call
+> Efficiency: 28.62 GOps/s @ 7.34 ops/cycle
+> [32m+ 3.7 x[0m against `levenshtein_serial_unit:q110xc7149:allpairs`
+
+Benchmarking [1m`levenshtein_within_icelake_k2:q110xc7149:allpairs`[0m:
+> Throughput: 4.99 GiB/s @ 2.20 ms/call
+> Efficiency: 20.10 GOps/s @ 5.15 ops/cycle
+> [32m+ 2.6 x[0m against `levenshtein_serial_unit:q110xc7149:allpairs`
+
+Benchmarking [1m`levenshtein_within_icelake_k3:q110xc7149:allpairs`[0m:
+> Throughput: 4.25 GiB/s @ 2.59 ms/call
+> Efficiency: 17.09 GOps/s @ 4.38 ops/cycle
+> [32m+ 2.2 x[0m against `levenshtein_serial_unit:q110xc7149:allpairs`
+
+Benchmarking [1m`levenshtein_within_icelake_k9:q110xc7149:allpairs`[0m:
+> Throughput: 3.90 GiB/s @ 2.82 ms/call
+> Efficiency: 15.68 GOps/s @ 4.02 ops/cycle
+> [32m+ 2.0 x[0m against `levenshtein_serial_unit:q110xc7149:allpairs`
+
+Benchmarking [1m`levenshtein_serial_unit:q110xc110:pairwise`[0m:
+> Throughput: 29.16 MiB/s @ 53.97 us/call
+> Efficiency: 114.67 MOps/s @ 0.03 ops/cycle
+
+Benchmarking [1m`levenshtein_within_serial_k1:q110xc110:pairwise`[0m:
+> Throughput: 30.64 MiB/s @ 51.36 us/call
+> Efficiency: 120.49 MOps/s @ 0.03 ops/cycle
+> [32m+ 5.1 %[0m against `levenshtein_serial_unit:q110xc110:pairwise`
+
+Benchmarking [1m`levenshtein_within_serial_k2:q110xc110:pairwise`[0m:
+> Throughput: 30.19 MiB/s @ 52.13 us/call
+> Efficiency: 118.73 MOps/s @ 0.03 ops/cycle
+> [32m+ 3.5 %[0m against `levenshtein_serial_unit:q110xc110:pairwise`
+
+Benchmarking [1m`levenshtein_within_serial_k3:q110xc110:pairwise`[0m:
+> Throughput: 29.85 MiB/s @ 52.73 us/call
+> Efficiency: 117.38 MOps/s @ 0.03 ops/cycle
+> [32m+ 2.4 %[0m against `levenshtein_serial_unit:q110xc110:pairwise`
+
+Benchmarking [1m`levenshtein_within_serial_k9:q110xc110:pairwise`[0m:
+> Throughput: 29.91 MiB/s @ 52.61 us/call
+> Efficiency: 117.64 MOps/s @ 0.03 ops/cycle
+> [32m+ 2.6 %[0m against `levenshtein_serial_unit:q110xc110:pairwise`
+
+Benchmarking [1m`levenshtein_within_haswell_k1:q110xc110:pairwise`[0m:
+> Throughput: 30.67 MiB/s @ 51.31 us/call
+> Efficiency: 120.62 MOps/s @ 0.03 ops/cycle
+> [32m+ 5.2 %[0m against `levenshtein_serial_unit:q110xc110:pairwise`
+
+Benchmarking [1m`levenshtein_within_haswell_k2:q110xc110:pairwise`[0m:
+> Throughput: 30.37 MiB/s @ 51.82 us/call
+> Efficiency: 119.43 MOps/s @ 0.03 ops/cycle
+> [32m+ 4.2 %[0m against `levenshtein_serial_unit:q110xc110:pairwise`
+
+Benchmarking [1m`levenshtein_within_haswell_k3:q110xc110:pairwise`[0m:
+> Throughput: 29.67 MiB/s @ 53.04 us/call
+> Efficiency: 116.69 MOps/s @ 0.03 ops/cycle
+> [32m+ 1.8 %[0m against `levenshtein_serial_unit:q110xc110:pairwise`
+
+Benchmarking [1m`levenshtein_within_haswell_k9:q110xc110:pairwise`[0m:
+> Throughput: 29.37 MiB/s @ 53.57 us/call
+> Efficiency: 115.52 MOps/s @ 0.03 ops/cycle
+> [32m+ 0.7 %[0m against `levenshtein_serial_unit:q110xc110:pairwise`
+
+Benchmarking [1m`levenshtein_within_icelake_k1:q110xc110:pairwise`[0m:
+> Throughput: 30.56 MiB/s @ 51.49 us/call
+> Efficiency: 120.20 MOps/s @ 0.03 ops/cycle
+> [32m+ 4.8 %[0m against `levenshtein_serial_unit:q110xc110:pairwise`
+
+Benchmarking [1m`levenshtein_within_icelake_k2:q110xc110:pairwise`[0m:
+> Throughput: 29.72 MiB/s @ 52.94 us/call
+> Efficiency: 116.90 MOps/s @ 0.03 ops/cycle
+> [32m+ 1.9 %[0m against `levenshtein_serial_unit:q110xc110:pairwise`
+
+Benchmarking [1m`levenshtein_within_icelake_k3:q110xc110:pairwise`[0m:
+> Throughput: 30.46 MiB/s @ 51.66 us/call
+> Efficiency: 119.80 MOps/s @ 0.03 ops/cycle
+> [32m+ 4.5 %[0m against `levenshtein_serial_unit:q110xc110:pairwise`
+
+Benchmarking [1m`levenshtein_within_icelake_k9:q110xc110:pairwise`[0m:
+> Throughput: 29.47 MiB/s @ 53.39 us/call
+> Efficiency: 115.91 MOps/s @ 0.03 ops/cycle
+> [32m+ 1.1 %[0m against `levenshtein_serial_unit:q110xc110:pairwise`
+
+Benchmarking [1m`levenshtein_serial_unit:q886xc887:allpairs`[0m:
+> Throughput: 1.97 GiB/s @ 5.56 ms/call
+> Efficiency: 7.95 GOps/s @ 2.04 ops/cycle
+
+Benchmarking [1m`levenshtein_within_serial_k1:q886xc887:allpairs`[0m:
+> Throughput: 3.31 GiB/s @ 3.32 ms/call
+> Efficiency: 13.33 GOps/s @ 3.42 ops/cycle
+> [32m+ 67.6 %[0m against `levenshtein_serial_unit:q886xc887:allpairs`
+
+Benchmarking [1m`levenshtein_within_serial_k2:q886xc887:allpairs`[0m:
+> Throughput: 2.74 GiB/s @ 4.00 ms/call
+> Efficiency: 11.06 GOps/s @ 2.84 ops/cycle
+> [32m+ 39.0 %[0m against `levenshtein_serial_unit:q886xc887:allpairs`
+
+Benchmarking [1m`levenshtein_within_serial_k3:q886xc887:allpairs`[0m:
+> Throughput: 2.44 GiB/s @ 4.51 ms/call
+> Efficiency: 9.81 GOps/s @ 2.52 ops/cycle
+> [32m+ 23.4 %[0m against `levenshtein_serial_unit:q886xc887:allpairs`
+
+Benchmarking [1m`levenshtein_within_serial_k9:q886xc887:allpairs`[0m:
+> Throughput: 2.28 GiB/s @ 4.81 ms/call
+> Efficiency: 9.20 GOps/s @ 2.36 ops/cycle
+> [32m+ 15.6 %[0m against `levenshtein_serial_unit:q886xc887:allpairs`
+
+Benchmarking [1m`levenshtein_within_haswell_k1:q886xc887:allpairs`[0m:
+> Throughput: 7.29 GiB/s @ 1.51 ms/call
+> Efficiency: 29.37 GOps/s @ 7.53 ops/cycle
+> [32m+ 3.7 x[0m against `levenshtein_serial_unit:q886xc887:allpairs`
+
+Benchmarking [1m`levenshtein_within_haswell_k2:q886xc887:allpairs`[0m:
+> Throughput: 5.26 GiB/s @ 2.09 ms/call
+> Efficiency: 21.18 GOps/s @ 5.43 ops/cycle
+> [32m+ 2.7 x[0m against `levenshtein_serial_unit:q886xc887:allpairs`
+
+Benchmarking [1m`levenshtein_within_haswell_k3:q886xc887:allpairs`[0m:
+> Throughput: 4.32 GiB/s @ 2.54 ms/call
+> Efficiency: 17.39 GOps/s @ 4.46 ops/cycle
+> [32m+ 2.2 x[0m against `levenshtein_serial_unit:q886xc887:allpairs`
+
+Benchmarking [1m`levenshtein_within_haswell_k9:q886xc887:allpairs`[0m:
+> Throughput: 2.86 GiB/s @ 3.84 ms/call
+> Efficiency: 11.53 GOps/s @ 2.96 ops/cycle
+> [32m+ 44.9 %[0m against `levenshtein_serial_unit:q886xc887:allpairs`
+
+Benchmarking [1m`levenshtein_within_icelake_k1:q886xc887:allpairs`[0m:
+> Throughput: 7.48 GiB/s @ 1.47 ms/call
+> Efficiency: 30.13 GOps/s @ 7.73 ops/cycle
+> [32m+ 3.8 x[0m against `levenshtein_serial_unit:q886xc887:allpairs`
+
+Benchmarking [1m`levenshtein_within_icelake_k2:q886xc887:allpairs`[0m:
+> Throughput: 5.48 GiB/s @ 2.00 ms/call
+> Efficiency: 22.07 GOps/s @ 5.66 ops/cycle
+> [32m+ 2.8 x[0m against `levenshtein_serial_unit:q886xc887:allpairs`
+
+Benchmarking [1m`levenshtein_within_icelake_k3:q886xc887:allpairs`[0m:
+> Throughput: 4.68 GiB/s @ 2.34 ms/call
+> Efficiency: 18.87 GOps/s @ 4.84 ops/cycle
+> [32m+ 2.4 x[0m against `levenshtein_serial_unit:q886xc887:allpairs`
+
+Benchmarking [1m`levenshtein_within_icelake_k9:q886xc887:allpairs`[0m:
+> Throughput: 4.73 GiB/s @ 2.32 ms/call
+> Efficiency: 19.04 GOps/s @ 4.88 ops/cycle
+> [32m+ 2.4 x[0m against `levenshtein_serial_unit:q886xc887:allpairs`
+
+Benchmarking [1m`levenshtein_serial_unit:q886xc886:pairwise`[0m:
+> Throughput: 29.08 MiB/s @ 435.90 us/call
+> Efficiency: 114.36 MOps/s @ 0.03 ops/cycle
+
+Benchmarking [1m`levenshtein_within_serial_k1:q886xc886:pairwise`[0m:
+> Throughput: 30.99 MiB/s @ 409.04 us/call
+> Efficiency: 121.87 MOps/s @ 0.03 ops/cycle
+> [32m+ 6.6 %[0m against `levenshtein_serial_unit:q886xc886:pairwise`
+
+Benchmarking [1m`levenshtein_within_serial_k2:q886xc886:pairwise`[0m:
+> Throughput: 30.92 MiB/s @ 409.93 us/call
+> Efficiency: 121.61 MOps/s @ 0.03 ops/cycle
+> [32m+ 6.3 %[0m against `levenshtein_serial_unit:q886xc886:pairwise`
+
+Benchmarking [1m`levenshtein_within_serial_k3:q886xc886:pairwise`[0m:
+> Throughput: 31.10 MiB/s @ 407.65 us/call
+> Efficiency: 122.29 MOps/s @ 0.03 ops/cycle
+> [32m+ 6.9 %[0m against `levenshtein_serial_unit:q886xc886:pairwise`
+
+Benchmarking [1m`levenshtein_within_serial_k9:q886xc886:pairwise`[0m:
+> Throughput: 30.86 MiB/s @ 410.80 us/call
+> Efficiency: 121.35 MOps/s @ 0.03 ops/cycle
+> [32m+ 6.1 %[0m against `levenshtein_serial_unit:q886xc886:pairwise`
+
+Benchmarking [1m`levenshtein_within_haswell_k1:q886xc886:pairwise`[0m:
+> Throughput: 32.05 MiB/s @ 395.46 us/call
+> Efficiency: 126.05 MOps/s @ 0.03 ops/cycle
+> [32m+ 10.2 %[0m against `levenshtein_serial_unit:q886xc886:pairwise`
+
+Benchmarking [1m`levenshtein_within_haswell_k2:q886xc886:pairwise`[0m:
+> Throughput: 31.23 MiB/s @ 405.96 us/call
+> Efficiency: 122.80 MOps/s @ 0.03 ops/cycle
+> [32m+ 7.4 %[0m against `levenshtein_serial_unit:q886xc886:pairwise`
+
+Benchmarking [1m`levenshtein_within_haswell_k3:q886xc886:pairwise`[0m:
+> Throughput: 31.22 MiB/s @ 406.07 us/call
+> Efficiency: 122.76 MOps/s @ 0.03 ops/cycle
+> [32m+ 7.3 %[0m against `levenshtein_serial_unit:q886xc886:pairwise`
+
+Benchmarking [1m`levenshtein_within_haswell_k9:q886xc886:pairwise`[0m:
+> Throughput: 29.59 MiB/s @ 428.40 us/call
+> Efficiency: 116.36 MOps/s @ 0.03 ops/cycle
+> [32m+ 1.7 %[0m against `levenshtein_serial_unit:q886xc886:pairwise`
+
+Benchmarking [1m`levenshtein_within_icelake_k1:q886xc886:pairwise`[0m:
+> Throughput: 31.92 MiB/s @ 397.07 us/call
+> Efficiency: 125.54 MOps/s @ 0.03 ops/cycle
+> [32m+ 9.8 %[0m against `levenshtein_serial_unit:q886xc886:pairwise`
+
+Benchmarking [1m`levenshtein_within_icelake_k2:q886xc886:pairwise`[0m:
+> Throughput: 31.55 MiB/s @ 401.73 us/call
+> Efficiency: 124.08 MOps/s @ 0.03 ops/cycle
+> [32m+ 8.5 %[0m against `levenshtein_serial_unit:q886xc886:pairwise`
+
+Benchmarking [1m`levenshtein_within_icelake_k3:q886xc886:pairwise`[0m:
+> Throughput: 30.68 MiB/s @ 413.20 us/call
+> Efficiency: 120.65 MOps/s @ 0.03 ops/cycle
+> [32m+ 5.5 %[0m against `levenshtein_serial_unit:q886xc886:pairwise`
+
+Benchmarking [1m`levenshtein_within_icelake_k9:q886xc886:pairwise`[0m:
+> Throughput: 30.12 MiB/s @ 420.81 us/call
+> Efficiency: 118.46 MOps/s @ 0.03 ops/cycle
+> [32m+ 3.6 %[0m against `levenshtein_serial_unit:q886xc886:pairwise`
+
+Benchmarking [1m`levenshtein_serial_unit:q7088xc110:allpairs`[0m:
+> Throughput: 2.01 GiB/s @ 5.43 ms/call
+> Efficiency: 8.09 GOps/s @ 2.08 ops/cycle
+
+Benchmarking [1m`levenshtein_within_serial_k1:q7088xc110:allpairs`[0m:
+> Throughput: 3.22 GiB/s @ 3.39 ms/call
+> Efficiency: 12.96 GOps/s @ 3.32 ops/cycle
+> [32m+ 60.1 %[0m against `levenshtein_serial_unit:q7088xc110:allpairs`
+
+Benchmarking [1m`levenshtein_within_serial_k2:q7088xc110:allpairs`[0m:
+> Throughput: 2.79 GiB/s @ 3.90 ms/call
+> Efficiency: 11.26 GOps/s @ 2.89 ops/cycle
+> [32m+ 39.1 %[0m against `levenshtein_serial_unit:q7088xc110:allpairs`
+
+Benchmarking [1m`levenshtein_within_serial_k3:q7088xc110:allpairs`[0m:
+> Throughput: 2.58 GiB/s @ 4.23 ms/call
+> Efficiency: 10.39 GOps/s @ 2.66 ops/cycle
+> [32m+ 28.3 %[0m against `levenshtein_serial_unit:q7088xc110:allpairs`
+
+Benchmarking [1m`levenshtein_within_serial_k9:q7088xc110:allpairs`[0m:
+> Throughput: 2.39 GiB/s @ 4.57 ms/call
+> Efficiency: 9.62 GOps/s @ 2.47 ops/cycle
+> [32m+ 18.8 %[0m against `levenshtein_serial_unit:q7088xc110:allpairs`
+
+Benchmarking [1m`levenshtein_within_haswell_k1:q7088xc110:allpairs`[0m:
+> Throughput: 8.03 GiB/s @ 1.36 ms/call
+> Efficiency: 32.35 GOps/s @ 8.30 ops/cycle
+> [32m+ 4.0 x[0m against `levenshtein_serial_unit:q7088xc110:allpairs`
+
+Benchmarking [1m`levenshtein_within_haswell_k2:q7088xc110:allpairs`[0m:
+> Throughput: 6.03 GiB/s @ 1.81 ms/call
+> Efficiency: 24.27 GOps/s @ 6.22 ops/cycle
+> [32m+ 3.0 x[0m against `levenshtein_serial_unit:q7088xc110:allpairs`
+
+Benchmarking [1m`levenshtein_within_haswell_k3:q7088xc110:allpairs`[0m:
+> Throughput: 5.12 GiB/s @ 2.13 ms/call
+> Efficiency: 20.62 GOps/s @ 5.29 ops/cycle
+> [32m+ 2.5 x[0m against `levenshtein_serial_unit:q7088xc110:allpairs`
+
+Benchmarking [1m`levenshtein_within_haswell_k9:q7088xc110:allpairs`[0m:
+> Throughput: 3.28 GiB/s @ 3.32 ms/call
+> Efficiency: 13.22 GOps/s @ 3.39 ops/cycle
+> [32m+ 63.4 %[0m against `levenshtein_serial_unit:q7088xc110:allpairs`
+
+Benchmarking [1m`levenshtein_within_icelake_k1:q7088xc110:allpairs`[0m:
+> Throughput: 8.30 GiB/s @ 1.31 ms/call
+> Efficiency: 33.45 GOps/s @ 8.58 ops/cycle
+> [32m+ 4.1 x[0m against `levenshtein_serial_unit:q7088xc110:allpairs`
+
+Benchmarking [1m`levenshtein_within_icelake_k2:q7088xc110:allpairs`[0m:
+> Throughput: 6.52 GiB/s @ 1.67 ms/call
+> Efficiency: 26.25 GOps/s @ 6.73 ops/cycle
+> [32m+ 3.2 x[0m against `levenshtein_serial_unit:q7088xc110:allpairs`
+
+Benchmarking [1m`levenshtein_within_icelake_k3:q7088xc110:allpairs`[0m:
+> Throughput: 5.97 GiB/s @ 1.83 ms/call
+> Efficiency: 24.03 GOps/s @ 6.16 ops/cycle
+> [32m+ 3.0 x[0m against `levenshtein_serial_unit:q7088xc110:allpairs`
+
+Benchmarking [1m`levenshtein_within_icelake_k9:q7088xc110:allpairs`[0m:
+> Throughput: 5.45 GiB/s @ 2.00 ms/call
+> Efficiency: 21.96 GOps/s @ 5.63 ops/cycle
+> [32m+ 2.7 x[0m against `levenshtein_serial_unit:q7088xc110:allpairs`
+
+Benchmarking [1m`levenshtein_serial_unit:q7088xc7088:pairwise`[0m:
+> Throughput: 30.37 MiB/s @ 3.34 ms/call
+> Efficiency: 119.49 MOps/s @ 0.03 ops/cycle
+
+Benchmarking [1m`levenshtein_within_serial_k1:q7088xc7088:pairwise`[0m:
+> Throughput: 31.52 MiB/s @ 3.22 ms/call
+> Efficiency: 123.99 MOps/s @ 0.03 ops/cycle
+> [32m+ 3.8 %[0m against `levenshtein_serial_unit:q7088xc7088:pairwise`
+
+Benchmarking [1m`levenshtein_within_serial_k2:q7088xc7088:pairwise`[0m:
+> Throughput: 31.07 MiB/s @ 3.27 ms/call
+> Efficiency: 122.21 MOps/s @ 0.03 ops/cycle
+> [32m+ 2.3 %[0m against `levenshtein_serial_unit:q7088xc7088:pairwise`
+
+Benchmarking [1m`levenshtein_within_serial_k3:q7088xc7088:pairwise`[0m:
+> Throughput: 30.75 MiB/s @ 3.30 ms/call
+> Efficiency: 120.95 MOps/s @ 0.03 ops/cycle
+> [32m+ 1.2 %[0m against `levenshtein_serial_unit:q7088xc7088:pairwise`
+
+Benchmarking [1m`levenshtein_within_serial_k9:q7088xc7088:pairwise`[0m:
+> Throughput: 29.83 MiB/s @ 3.40 ms/call
+> Efficiency: 117.36 MOps/s @ 0.03 ops/cycle
+> [31m- 1.8 %[0m against `levenshtein_serial_unit:q7088xc7088:pairwise`
+
+Benchmarking [1m`levenshtein_within_haswell_k1:q7088xc7088:pairwise`[0m:
+> Throughput: 30.65 MiB/s @ 3.31 ms/call
+> Efficiency: 120.58 MOps/s @ 0.03 ops/cycle
+> [32m+ 0.9 %[0m against `levenshtein_serial_unit:q7088xc7088:pairwise`
+
+Benchmarking [1m`levenshtein_within_haswell_k2:q7088xc7088:pairwise`[0m:
+> Throughput: 31.61 MiB/s @ 3.21 ms/call
+> Efficiency: 124.33 MOps/s @ 0.03 ops/cycle
+> [32m+ 4.1 %[0m against `levenshtein_serial_unit:q7088xc7088:pairwise`
+
+Benchmarking [1m`levenshtein_within_haswell_k3:q7088xc7088:pairwise`[0m:
+> Throughput: 30.79 MiB/s @ 3.29 ms/call
+> Efficiency: 121.11 MOps/s @ 0.03 ops/cycle
+> [32m+ 1.4 %[0m against `levenshtein_serial_unit:q7088xc7088:pairwise`
+
+Benchmarking [1m`levenshtein_within_haswell_k9:q7088xc7088:pairwise`[0m:
+> Throughput: 29.58 MiB/s @ 3.43 ms/call
+> Efficiency: 116.34 MOps/s @ 0.03 ops/cycle
+> [31m- 2.6 %[0m against `levenshtein_serial_unit:q7088xc7088:pairwise`
+
+Benchmarking [1m`levenshtein_within_icelake_k1:q7088xc7088:pairwise`[0m:
+> Throughput: 32.54 MiB/s @ 3.12 ms/call
+> Efficiency: 127.99 MOps/s @ 0.03 ops/cycle
+> [32m+ 7.1 %[0m against `levenshtein_serial_unit:q7088xc7088:pairwise`
+
+Benchmarking [1m`levenshtein_within_icelake_k2:q7088xc7088:pairwise`[0m:
+> Throughput: 31.50 MiB/s @ 3.22 ms/call
+> Efficiency: 123.93 MOps/s @ 0.03 ops/cycle
+> [32m+ 3.7 %[0m against `levenshtein_serial_unit:q7088xc7088:pairwise`
+
+Benchmarking [1m`levenshtein_within_icelake_k3:q7088xc7088:pairwise`[0m:
+> Throughput: 31.33 MiB/s @ 3.24 ms/call
+> Efficiency: 123.23 MOps/s @ 0.03 ops/cycle
+> [32m+ 3.1 %[0m against `levenshtein_serial_unit:q7088xc7088:pairwise`
+
+Benchmarking [1m`levenshtein_within_icelake_k9:q7088xc7088:pairwise`[0m:
+> Throughput: 30.32 MiB/s @ 3.35 ms/call
+> Efficiency: 119.29 MOps/s @ 0.03 ops/cycle
+> [31m- 0.2 %[0m against `levenshtein_serial_unit:q7088xc7088:pairwise`
+All benchmarks finished.
+=== StringWars within_k comparison (vs polyleven / rapidfuzz cutoff) ===
+  error: subprocess-exited-with-error
+
+  × Preparing editable metadata (pyproject.toml) did not run successfully.
+  │ exit code: 1
+  ╰─> [16 lines of output]
+      Traceback (most recent call last):
+        File "/home/ubuntu/stringzilla-bench/venv/lib/python3.12/site-packages/pip/_vendor/pyproject_hooks/_in_process/_in_process.py", line 389, in <module>
+          main()
+        File "/home/ubuntu/stringzilla-bench/venv/lib/python3.12/site-packages/pip/_vendor/pyproject_hooks/_in_process/_in_process.py", line 373, in main
+          json_out["return_val"] = hook(**hook_input["kwargs"])
+                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        File "/home/ubuntu/stringzilla-bench/venv/lib/python3.12/site-packages/pip/_vendor/pyproject_hooks/_in_process/_in_process.py", line 209, in prepare_metadata_for_build_editable
+          return hook(metadata_directory, config_settings)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        File "/home/ubuntu/stringzilla-bench/StringZilla/build_backend.py", line 104, in prepare_metadata_for_build_editable
+          bm = _build_meta()
+               ^^^^^^^^^^^^^
+        File "/home/ubuntu/stringzilla-bench/StringZilla/build_backend.py", line 32, in _build_meta
+          from setuptools import build_meta as _orig_build_meta  # local import
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      ModuleNotFoundError: No module named 'setuptools'
+      [end of output]
+
+  note: This error originates from a subprocess, and is likely not a problem with pip.
+error: metadata-generation-failed
+
+× Encountered error while generating package metadata.
+╰─> from file:///home/ubuntu/stringzilla-bench/StringZilla
+
+note: This is an issue with the package mentioned above, not pip.
+hint: See above for details.

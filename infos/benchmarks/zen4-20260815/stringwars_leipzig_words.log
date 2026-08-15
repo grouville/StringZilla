@@ -1,0 +1,63 @@
+  verify within_k k=1 [within_k]: 262144 cells, 0 mismatches
+  rapidfuzz.Levenshtein.distance_k1 checksum=0
+  polyleven.levenshtein_k1 checksum=0
+  verify within_k k=2 [within_k]: 262144 cells, 0 mismatches
+  rapidfuzz.Levenshtein.distance_k2 checksum=3476224
+  polyleven.levenshtein_k2 checksum=4014848
+  verify within_k k=4 [within_k]: 262144 cells, 0 mismatches
+  rapidfuzz.Levenshtein.distance_k4 checksum=5711999
+  polyleven.levenshtein_k4 checksum=6490623
+  verify within_k k=1 [within_k_accepts]: 262144 cells, 0 mismatches
+  rapidfuzz.Levenshtein.distance_k1 checksum=13784063
+  polyleven.levenshtein_k1 checksum=15878143
+  verify within_k k=2 [within_k_accepts]: 262144 cells, 0 mismatches
+  rapidfuzz.Levenshtein.distance_k2 checksum=13353983
+  polyleven.levenshtein_k2 checksum=15532031
+  verify within_k k=4 [within_k_accepts]: 262144 cells, 0 mismatches
+  rapidfuzz.Levenshtein.distance_k4 checksum=12329983
+  polyleven.levenshtein_k4 checksum=14435327
+Benchmark configuration (all-pairs cross-product):
+- <1cpu>: 16x16 cross-product (256 pairs)
+- <12cpu>: 55x55 cross-product (3,025 pairs)
+- Tokens available: 20,804,391
+- Time budget per variant: 5.0s (warmup 1.0s), seed 42
+
+# uniform
+
+# within_k
+rapidfuzz.Levenshtein.distance_k1          2.87 M cmp/s | 23.71 MB/s
+polyleven.levenshtein_k1                   3.28 M cmp/s | 27.06 MB/s
+rapidfuzz.process.cdist_k1<1cpu,4096^2>    160.34 M cmp/s | 401.15 kB/s
+rapidfuzz.process.cdist_k1<allcpu,4096^2>  327.05 M cmp/s | 818.23 kB/s
+stringzillas.LevenshteinWithinK_k1<1cpu>   141.75 M cmp/s | 73.09 MB/s
+stringzillas.LevenshteinWithinK_k1<12cpu>  1.05 G cmp/s | 191.44 MB/s
+rapidfuzz.Levenshtein.distance_k2          2.78 M cmp/s | 22.94 MB/s
+polyleven.levenshtein_k2                   3.21 M cmp/s | 26.50 MB/s
+rapidfuzz.process.cdist_k2<1cpu,4096^2>    159.92 M cmp/s | 400.09 kB/s
+rapidfuzz.process.cdist_k2<allcpu,4096^2>  325.42 M cmp/s | 814.16 kB/s
+stringzillas.LevenshteinWithinK_k2<1cpu>   109.48 M cmp/s | 56.45 MB/s
+stringzillas.LevenshteinWithinK_k2<12cpu>  834.85 M cmp/s | 152.34 MB/s
+rapidfuzz.Levenshtein.distance_k4          2.61 M cmp/s | 21.54 MB/s
+polyleven.levenshtein_k4                   2.97 M cmp/s | 24.48 MB/s
+rapidfuzz.process.cdist_k4<1cpu,4096^2>    161.59 M cmp/s | 404.28 kB/s
+rapidfuzz.process.cdist_k4<allcpu,4096^2>  331.09 M cmp/s | 828.34 kB/s
+stringzillas.LevenshteinWithinK_k4<1cpu>   94.12 M cmp/s | 48.53 MB/s
+stringzillas.LevenshteinWithinK_k4<12cpu>  625.88 M cmp/s | 114.21 MB/s
+rapidfuzz.Levenshtein.distance_k1          2.76 M cmp/s | 26.53 MB/s
+polyleven.levenshtein_k1                   3.18 M cmp/s | 30.56 MB/s
+rapidfuzz.process.cdist_k1<1cpu,4096^2>    173.99 M cmp/s | 436.57 kB/s
+rapidfuzz.process.cdist_k1<allcpu,4096^2>  366.51 M cmp/s | 919.61 kB/s
+stringzillas.LevenshteinWithinK_k1<1cpu>   139.49 M cmp/s | 82.28 MB/s
+stringzillas.LevenshteinWithinK_k1<12cpu>  979.60 M cmp/s | 157.06 MB/s
+rapidfuzz.Levenshtein.distance_k2          2.67 M cmp/s | 25.37 MB/s
+polyleven.levenshtein_k2                   3.11 M cmp/s | 29.51 MB/s
+rapidfuzz.process.cdist_k2<1cpu,4096^2>    174.00 M cmp/s | 435.74 kB/s
+rapidfuzz.process.cdist_k2<allcpu,4096^2>  368.79 M cmp/s | 923.53 kB/s
+stringzillas.LevenshteinWithinK_k2<1cpu>   89.84 M cmp/s | 53.35 MB/s
+stringzillas.LevenshteinWithinK_k2<12cpu>  812.58 M cmp/s | 132.16 MB/s
+rapidfuzz.Levenshtein.distance_k4          2.47 M cmp/s | 22.35 MB/s
+polyleven.levenshtein_k4                   2.89 M cmp/s | 26.16 MB/s
+rapidfuzz.process.cdist_k4<1cpu,4096^2>    171.58 M cmp/s | 432.65 kB/s
+rapidfuzz.process.cdist_k4<allcpu,4096^2>  360.39 M cmp/s | 908.75 kB/s
+stringzillas.LevenshteinWithinK_k4<1cpu>   75.76 M cmp/s | 44.09 MB/s
+stringzillas.LevenshteinWithinK_k4<12cpu>  590.40 M cmp/s | 92.51 MB/s

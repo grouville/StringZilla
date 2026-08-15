@@ -113,8 +113,27 @@ capture:
 
 This is not an ISA shootout—the hot index is currently portable scalar code and compiler tuning can change its
 layout. It does establish that the result is algorithmic rather than an AVX-512-only effect, and that no AVX-512
-performance claim is currently justified. Randomized repeated captures on independent AVX2, Intel AVX-512, and Arm
-machines remain part of the release gate.
+performance claim is currently justified. Independent AVX2 evidence follows below; Arm remains part of the release
+gate, while Intel AVX-512 is optional because no AVX-512-specific claim is made.
+
+An independent AVX2 replication used GCC 13.3 with `-march=haswell -mtune=haswell` on an Intel Core i5-9300H
+(Coffee Lake, four cores/eight threads, 8 MiB L3), pinned to CPU 2. The public 370,105-word dictionary reproduced the
+hash above. Because the historical server query artifact was no longer available, this replication generated a new
+10,000-query equal-quarter mixed set with the checked-in generator and seed 243; its SHA-256 is
+`69a36c6f27e70fe548b664cb159fb519b472f199a66d430dbc2553a4abc819b9`. This is deliberately reported as an
+independent workload rather than silently substituted into the server table.
+
+Warm single-thread medians were 8.274 ms over ten repeats at `k=1` and 88.167 ms over seven repeats at `k=2`.
+Pinned RapidFuzz `b5830af53bd1b3c7460a8de1e9f7095df99b3470` cached scans took median 41.304 s and 69.228 s over three
+repeats, respectively, making the index about 4,992x and 785x faster for complete repeated-dictionary retrieval on
+this machine. Match totals were 12,053 and 144,160. Independently emitted sorted `(ID, distance)` streams matched
+RapidFuzz byte-for-byte, with SHA-256
+`5f47ecede8837788287f20e2deb6b7567bacfd2617e76876ae34607bec171222` and
+`8af4d3b1d54ad6efb1945af718c813e81c487e05642da537411c82229936933f`. Single observed builds took 0.367 s and
+2.006 s; persistent index sizes reproduced 34,422,900 and 134,048,996 bytes. Laptop frequency and thermal state were
+not controlled, so these numbers establish independent AVX2 portability and the qualitative margin, not a
+cross-machine ISA comparison. Arm remains the outstanding architecture gate; Intel AVX-512 is optional because this
+work makes no AVX-512-specific speed claim.
 
 An independent Rust `fst` 0.4.7 comparison used `fst::Map` and its official Unicode Levenshtein automaton on the same
 ASCII corpus, where Unicode-scalar and byte semantics coincide. This comparison is deliberately favorable to `fst`:
