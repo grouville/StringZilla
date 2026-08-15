@@ -10,6 +10,8 @@
 #include "stringzillas/similarities/serial.hpp"
 #include "stringzilla/find/icelake.h" // `sz_find_byteset_icelake`
 
+#include <cstring>
+
 namespace ashvardanian {
 namespace stringzillas {
 
@@ -1711,6 +1713,202 @@ struct levenshtein_distance_within<char, capability_, std::enable_if_t<(capabili
 
     levenshtein_distance_within() noexcept {}
     explicit levenshtein_distance_within(size_t bound) noexcept : bound_(bound) {}
+
+    /** @brief Packed-byte Myers for one query of at most eight bytes against up to 64 candidates.
+     *
+     *  Unlike the generic single-word path, every byte of the ZMM register is an independent Myers word. This
+     *  uses the whole vector for short dictionary words (64 candidates rather than eight) and avoids byte-lane
+     *  shift bleed by expressing `x << 1` as the lane-wise wrapping add `x + x`.
+     *
+     *  @pre `0 < query.size() <= 8`, `candidates.size() <= 64`, every candidate has at most 255 bytes, and
+     *       `bound_ <= 254`.
+     */
+    template <typename results_writer_>
+    status_t within_64x8_shared_query_(span<char_t const> query, span<span<char_t const> const> candidates,
+                                       results_writer_ &results, scratch_space_t scratch_space) const noexcept {
+
+        static constexpr size_t packed_lanes_k = 64;
+        static constexpr size_t match_masks_bytes = 256;
+
+        size_t max_candidate_length = 0;
+        for (index_t lane = 0; lane != candidates.size(); ++lane)
+            max_candidate_length = sz_max_of_two(max_candidate_length, candidates[lane].size());
+        if (scratch_space.size() < match_masks_bytes + 64 + max_candidate_length * packed_lanes_k)
+            return status_t::bad_alloc_k;
+
+        u8_t *const match_masks = reinterpret_cast<u8_t *>(scratch_space.data());
+        u8_t *const equality_bytes = reinterpret_cast<u8_t *>(
+            (reinterpret_cast<uintptr_t>(scratch_space.data() + match_masks_bytes) + 63) & ~(uintptr_t)63);
+        alignas(64) u8_t candidate_lengths[packed_lanes_k] = {0};
+
+        for (size_t position = 0; position != query.size(); ++position)
+            match_masks[(u8_t)query[position]] = 0;
+        for (index_t lane = 0; lane != candidates.size(); ++lane)
+            for (size_t position = 0; position != candidates[lane].size(); ++position)
+                match_masks[(u8_t)candidates[lane][position]] = 0;
+        for (size_t position = 0; position != query.size(); ++position)
+            match_masks[(u8_t)query[position]] |= (u8_t)(1u << position);
+
+        for (index_t lane = 0; lane != candidates.size(); ++lane) {
+            size_t const candidate_length = candidates[lane].size();
+            candidate_lengths[lane] = (u8_t)candidate_length;
+            for (size_t position = 0; position != candidate_length; ++position)
+                equality_bytes[position * packed_lanes_k + lane] = match_masks[(u8_t)candidates[lane][position]];
+            for (size_t position = candidate_length; position != max_candidate_length; ++position)
+                equality_bytes[position * packed_lanes_k + lane] = 0;
+        }
+
+        u8_t const query_length = (u8_t)query.size();
+        u8_t const initial_positive = query_length == 8 ? (u8_t)0xFF : (u8_t)((1u << query_length) - 1u);
+        u8_t const top_bit = (u8_t)(1u << (query_length - 1u));
+        __m512i const one = _mm512_set1_epi8(1);
+        __m512i const top_mask = _mm512_set1_epi8((char)top_bit);
+        __m512i const lengths = _mm512_load_si512(candidate_lengths);
+        __m512i const bound = _mm512_set1_epi8((char)(u8_t)bound_);
+        __m512i vertical_positive = _mm512_set1_epi8((char)initial_positive);
+        __m512i vertical_negative = _mm512_setzero_si512();
+        __m512i score = _mm512_set1_epi8((char)query_length);
+        __mmask64 dead = 0;
+
+        for (size_t position = 0; position != max_candidate_length; ++position) {
+            __mmask64 const live = _mm512_cmp_epu8_mask(lengths, _mm512_set1_epi8((char)(u8_t)position),
+                                                         _MM_CMPINT_GT);
+            __mmask64 const active = live & ~dead;
+            __m512i const equality = _mm512_load_si512(equality_bytes + position * packed_lanes_k);
+            __m512i const carry_in = _mm512_or_si512(equality, vertical_negative);
+            __m512i const sum = _mm512_add_epi8(_mm512_and_si512(equality, vertical_positive), vertical_positive);
+            __m512i const diagonal = _mm512_ternarylogic_epi32(sum, vertical_positive, equality,
+                                                               myers_t::ternlog_xor_or_k);
+            __m512i horizontal_positive = _mm512_ternarylogic_epi32(vertical_negative, diagonal, vertical_positive,
+                                                                    myers_t::ternlog_or_nor_k);
+            __m512i horizontal_negative = _mm512_and_si512(vertical_positive, diagonal);
+            score = _mm512_mask_add_epi8(score, active & _mm512_test_epi8_mask(horizontal_positive, top_mask), score,
+                                         one);
+            score = _mm512_mask_sub_epi8(score, active & _mm512_test_epi8_mask(horizontal_negative, top_mask), score,
+                                         one);
+            horizontal_positive = _mm512_or_si512(_mm512_add_epi8(horizontal_positive, horizontal_positive), one);
+            horizontal_negative = _mm512_add_epi8(horizontal_negative, horizontal_negative);
+            __m512i const next_positive = _mm512_ternarylogic_epi32(horizontal_negative, carry_in,
+                                                                    horizontal_positive,
+                                                                    myers_t::ternlog_or_nor_k);
+            __m512i const next_negative = _mm512_and_si512(horizontal_positive, carry_in);
+            vertical_positive = _mm512_mask_blend_epi8(active, vertical_positive, next_positive);
+            vertical_negative = _mm512_mask_blend_epi8(active, vertical_negative, next_negative);
+
+            __m512i const remaining = _mm512_sub_epi8(lengths, _mm512_set1_epi8((char)(u8_t)(position + 1)));
+            __m512i const hopeless_threshold = _mm512_adds_epu8(bound, remaining);
+            dead |= active & _mm512_cmp_epu8_mask(score, hopeless_threshold, _MM_CMPINT_GT);
+            if ((live & ~dead) == 0) break;
+        }
+
+        alignas(64) u8_t final_scores[packed_lanes_k];
+        _mm512_store_si512(final_scores, score);
+        for (index_t lane = 0; lane != candidates.size(); ++lane)
+            results[lane] = (size_t)((dead & ((__mmask64)1 << lane)) == 0 && final_scores[lane] <= bound_);
+        return status_t::success_k;
+    }
+
+    static constexpr size_t packed_patterns_8_lanes_k = 64;
+    static constexpr size_t packed_patterns_8_masks_bytes_k = 256 * packed_patterns_8_lanes_k;
+
+    /** @brief Packs up to 64 byte patterns of length at most eight into symbol-major byte-lane equality masks.
+     *
+     *  `match_masks[symbol][lane]` is one complete Myers word for pattern `lane`. Unlike
+     *  `within_64x8_shared_query_`, which packs candidates around one query and rebuilds/transposes for every row,
+     *  this representation is built once for a block of query patterns and reused while streaming every candidate.
+     */
+    static void pack_64x8_patterns_(span<span<char_t const> const> patterns, u8_t *match_masks,
+                                    u8_t *pattern_lengths) noexcept {
+        sz_assert_(patterns.size() <= packed_patterns_8_lanes_k);
+        std::memset(match_masks, 0, packed_patterns_8_masks_bytes_k);
+        std::memset(pattern_lengths, 0, packed_patterns_8_lanes_k);
+        for (index_t lane = 0; lane != patterns.size(); ++lane) {
+            sz_assert_(patterns[lane].size() <= 8);
+            pattern_lengths[lane] = static_cast<u8_t>(patterns[lane].size());
+            for (size_t position = 0; position != patterns[lane].size(); ++position)
+                match_masks[(size_t)(u8_t)patterns[lane][position] * packed_patterns_8_lanes_k + lane] |=
+                    static_cast<u8_t>(1u << position);
+        }
+    }
+
+    /** @brief Scores one candidate against a prepacked block of up to 64 patterns of length at most eight. */
+    void within_64x8_pattern_block_candidate_(u8_t const *match_masks, u8_t const *pattern_lengths,
+                                               index_t patterns_count, span<char_t const> candidate,
+                                               u8_t *results) const noexcept {
+        sz_assert_(patterns_count <= packed_patterns_8_lanes_k);
+        sz_assert_(candidate.size() <= 255 && bound_ <= 254);
+
+        alignas(64) u8_t initial_positives[packed_patterns_8_lanes_k] = {0};
+        alignas(64) u8_t top_bits[packed_patterns_8_lanes_k] = {0};
+        __mmask64 valid = patterns_count == packed_patterns_8_lanes_k
+                             ? ~(__mmask64)0
+                             : (((__mmask64)1 << patterns_count) - 1);
+        __mmask64 empty = 0;
+        for (index_t lane = 0; lane != patterns_count; ++lane) {
+            size_t const pattern_length = pattern_lengths[lane];
+            if (pattern_length == 0) {
+                empty |= (__mmask64)1 << lane;
+                continue;
+            }
+            size_t const length_difference = pattern_length > candidate.size() ? pattern_length - candidate.size()
+                                                                                : candidate.size() - pattern_length;
+            if (length_difference > bound_) {
+                valid &= ~((__mmask64)1 << lane);
+                continue;
+            }
+            initial_positives[lane] = pattern_length == 8 ? (u8_t)0xFF
+                                                          : (u8_t)((1u << pattern_length) - 1u);
+            top_bits[lane] = (u8_t)(1u << (pattern_length - 1u));
+        }
+        valid &= ~empty;
+
+        __m512i const one = _mm512_set1_epi8(1);
+        __m512i const top_mask = _mm512_load_si512(top_bits);
+        __m512i const bound = _mm512_set1_epi8((char)(u8_t)bound_);
+        __m512i vertical_positive = _mm512_load_si512(initial_positives);
+        __m512i vertical_negative = _mm512_setzero_si512();
+        __m512i score = _mm512_load_si512(pattern_lengths);
+        __mmask64 dead = ~valid;
+
+        for (size_t position = 0; position != candidate.size() && valid != 0; ++position) {
+            __mmask64 const active = valid & ~dead;
+            if (active == 0) break;
+            __m512i const equality =
+                _mm512_loadu_si512(match_masks + (size_t)(u8_t)candidate[position] * packed_patterns_8_lanes_k);
+            __m512i const carry_in = _mm512_or_si512(equality, vertical_negative);
+            __m512i const sum = _mm512_add_epi8(_mm512_and_si512(equality, vertical_positive), vertical_positive);
+            __m512i const diagonal = _mm512_ternarylogic_epi32(sum, vertical_positive, equality,
+                                                               myers_t::ternlog_xor_or_k);
+            __m512i horizontal_positive = _mm512_ternarylogic_epi32(vertical_negative, diagonal, vertical_positive,
+                                                                    myers_t::ternlog_or_nor_k);
+            __m512i horizontal_negative = _mm512_and_si512(vertical_positive, diagonal);
+            score = _mm512_mask_add_epi8(score, active & _mm512_test_epi8_mask(horizontal_positive, top_mask), score,
+                                         one);
+            score = _mm512_mask_sub_epi8(score, active & _mm512_test_epi8_mask(horizontal_negative, top_mask), score,
+                                         one);
+            horizontal_positive = _mm512_or_si512(_mm512_add_epi8(horizontal_positive, horizontal_positive), one);
+            horizontal_negative = _mm512_add_epi8(horizontal_negative, horizontal_negative);
+            __m512i const next_positive = _mm512_ternarylogic_epi32(horizontal_negative, carry_in,
+                                                                    horizontal_positive,
+                                                                    myers_t::ternlog_or_nor_k);
+            __m512i const next_negative = _mm512_and_si512(horizontal_positive, carry_in);
+            vertical_positive = _mm512_mask_blend_epi8(active, vertical_positive, next_positive);
+            vertical_negative = _mm512_mask_blend_epi8(active, vertical_negative, next_negative);
+
+            size_t const remaining_scalar = candidate.size() - position - 1;
+            __m512i const hopeless_threshold =
+                _mm512_adds_epu8(bound, _mm512_set1_epi8((char)(u8_t)remaining_scalar));
+            dead |= active & _mm512_cmp_epu8_mask(score, hopeless_threshold, _MM_CMPINT_GT);
+        }
+
+        alignas(64) u8_t final_scores[packed_patterns_8_lanes_k];
+        _mm512_store_si512(final_scores, score);
+        for (index_t lane = 0; lane != patterns_count; ++lane) {
+            if (empty & ((__mmask64)1 << lane)) results[lane] = candidate.size() <= bound_;
+            else
+                results[lane] = (dead & ((__mmask64)1 << lane)) == 0 && final_scores[lane] <= bound_;
+        }
+    }
 
     /** @brief Single-pair scratch sizing for the per-pair engine path - delegated to the serial walker (one pair
      *      gains nothing from AVX-512 batching; the 8-lane kernels serve the cross-product). */
@@ -3499,6 +3697,46 @@ struct levenshtein_distances_within<allocator_type_, capability_,
                 continue;
             }
 
+            // A query of at most eight bytes fits in one byte-wide Myers word. Pack 64 candidates into a ZMM
+            // register instead of spending one 64-bit lane per candidate. The byte score remains exact while the
+            // candidate length fits in u8; unusually large bounds/candidates retain the generic path below.
+            if (query.size() <= 8 && candidate.size() <= 255 && bound_ <= 254) {
+                static constexpr index_t packed_lanes_k = 64;
+                span<char const> candidate_views[packed_lanes_k];
+                cross_cell_destination_t<value_t> group_destinations[packed_lanes_k];
+                size_t const seed_query_index = query_index;
+                candidate_views[0] = candidate;
+                group_destinations[0] = destination_for(query_index, candidate_index);
+                index_t group = 1;
+                ++cell_index;
+                for (; cell_index != cell_end && group != packed_lanes_k; ++cell_index) {
+                    size_t next_query_index = 0, next_candidate_index = 0;
+                    cross_cell_to_indices_(cell_index, candidates_count, cross_kind, next_query_index,
+                                           next_candidate_index);
+                    if (next_query_index != seed_query_index) break;
+                    auto const next_query = to_view(queries[next_query_index]);
+                    auto const next_candidate = to_view(candidates[next_candidate_index]);
+                    if (next_candidate.empty() || next_candidate.size() > 255) break;
+                    size_t const next_shorter = sz_min_of_two(next_query.size(), next_candidate.size());
+                    size_t const next_longer = sz_max_of_two(next_query.size(), next_candidate.size());
+                    if (next_longer - next_shorter > bound_) {
+                        cross_cell_destination_t<value_t> const next_destination =
+                            destination_for(next_query_index, next_candidate_index);
+                        cross_cell_writer_t<value_t> {&next_destination}[0] = 0;
+                        continue;
+                    }
+                    candidate_views[group] = next_candidate;
+                    group_destinations[group] = destination_for(next_query_index, next_candidate_index);
+                    ++group;
+                }
+
+                writer.destinations = group_destinations;
+                status_t const status = myers.within_64x8_shared_query_(
+                    query, span<span<char const> const> {candidate_views, group}, writer, scratch);
+                if (status != status_t::success_k) return status;
+                continue;
+            }
+
             // Bounded single-word Myers: query-major group, seeding with this cell and extending over consecutive
             // live cells that share the seed query, pass the length prefilter, and fit one 64-bit Myers word, so the
             // build-once `within_8x64_shared_query_` kernel can pay the `match_masks` build once per query. Per-lane
@@ -3576,6 +3814,78 @@ struct levenshtein_distances_within<allocator_type_, capability_,
         return status_t::success_k;
     }
 
+    /** @brief Pattern-major short-query cross-product: pack 64 queries once, then stream all candidates.
+     *
+     *  This is deliberately restricted to the ordinary two-set matrix. It changes the traversal order from the
+     *  generic query-major cell walker, which is the important part: equality masks are built once per 64 query
+     *  patterns and reused for the complete candidate corpus. Rows whose query exceeds eight bytes retain the
+     *  already-tested generic path.
+     */
+    template <typename queries_type_, typename candidates_type_, typename results_type_>
+    SZ_NOINLINE status_t score_all_pairs_patterns8_(queries_type_ const &queries,
+                                                     candidates_type_ const &candidates, results_type_ &&results,
+                                                     scratch_space_t scratch,
+                                                     cpu_specs_t const &specs) noexcept {
+        using value_t = remove_cvref<decltype(results.data[0])>;
+        sz_assert_(scratch.size() >= myers_t::packed_patterns_8_masks_bytes_k);
+
+        myers_t myers {bound_};
+        u8_t *const match_masks = reinterpret_cast<u8_t *>(scratch.data());
+        alignas(64) u8_t pattern_lengths[myers_t::packed_patterns_8_lanes_k];
+        alignas(64) u8_t lane_results[myers_t::packed_patterns_8_lanes_k];
+        alignas(64) u8_t result_tile[myers_t::packed_patterns_8_lanes_k *
+                                     myers_t::packed_patterns_8_lanes_k];
+
+        for (size_t query_begin = 0; query_begin != queries.size();) {
+            auto const first_query = to_view(queries[query_begin]);
+            if (first_query.size() > 8) {
+                size_t const cell_begin = query_begin * candidates.size();
+                if (status_t status = score_range_(queries, candidates, results, cross_similarities_t::all_pairs_k,
+                                                   cell_begin, cell_begin + candidates.size(), scratch, specs);
+                    status != status_t::success_k)
+                    return status;
+                ++query_begin;
+                continue;
+            }
+
+            span<char const> pattern_views[myers_t::packed_patterns_8_lanes_k];
+            index_t patterns_count = 0;
+            while (query_begin + patterns_count != queries.size() &&
+                   patterns_count != myers_t::packed_patterns_8_lanes_k) {
+                auto const pattern = to_view(queries[query_begin + patterns_count]);
+                if (pattern.size() > 8) break;
+                pattern_views[patterns_count++] = pattern;
+            }
+            myers_t::pack_64x8_patterns_(span<span<char const> const> {pattern_views, patterns_count}, match_masks,
+                                         pattern_lengths);
+
+            for (size_t candidate_begin = 0; candidate_begin != candidates.size();) {
+                size_t const candidates_in_tile =
+                    sz_min_of_two(candidates.size() - candidate_begin,
+                                  (size_t)myers_t::packed_patterns_8_lanes_k);
+                for (size_t candidate_lane = 0; candidate_lane != candidates_in_tile; ++candidate_lane) {
+                    myers.within_64x8_pattern_block_candidate_(
+                        match_masks, pattern_lengths, patterns_count,
+                        to_view(candidates[candidate_begin + candidate_lane]), lane_results);
+                    for (index_t pattern_lane = 0; pattern_lane != patterns_count; ++pattern_lane)
+                        result_tile[pattern_lane * myers_t::packed_patterns_8_lanes_k + candidate_lane] =
+                            lane_results[pattern_lane];
+                }
+                for (index_t pattern_lane = 0; pattern_lane != patterns_count; ++pattern_lane) {
+                    value_t *const destination =
+                        results.data + (query_begin + pattern_lane) * results.row_stride + candidate_begin;
+                    u8_t const *const source =
+                        result_tile + pattern_lane * myers_t::packed_patterns_8_lanes_k;
+                    for (size_t candidate_lane = 0; candidate_lane != candidates_in_tile; ++candidate_lane)
+                        destination[candidate_lane] = static_cast<value_t>(source[candidate_lane]);
+                }
+                candidate_begin += candidates_in_tile;
+            }
+            query_begin += patterns_count;
+        }
+        return status_t::success_k;
+    }
+
     /** @brief Answers membership for the cross-product in parallel: uneven per-cell costs ride the work-stealing
      *      scheduler. */
     template <typename queries_type_, typename candidates_type_, typename results_type_, typename executor_type_>
@@ -3614,6 +3924,12 @@ struct levenshtein_distances_within<allocator_type_, capability_,
         if (status_t status = score_scratch_.try_resize(worst_cell_scratch_(queries, candidates, specs));
             status != status_t::success_k)
             return status;
+        bool packed_patterns_eligible = bound_ <= 254;
+        for (size_t candidate_index = 0; candidate_index != candidates.size() && packed_patterns_eligible;
+             ++candidate_index)
+            packed_patterns_eligible = to_view(candidates[candidate_index]).size() <= 255;
+        if (packed_patterns_eligible)
+            return score_all_pairs_patterns8_(queries, candidates, results, scratch_space_t(score_scratch_), specs);
         return score_range_(
             queries, candidates, results, cross_similarities_t::all_pairs_k, 0,
             cross_live_cells_count_(queries.size(), candidates.size(), cross_similarities_t::all_pairs_k),
