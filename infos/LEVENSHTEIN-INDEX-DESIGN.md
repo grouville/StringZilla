@@ -21,8 +21,8 @@ Production design for issue #243. Experimental evidence remains on branch
 |---|---|---|
 | `k = 0` | exact hash/radix lookup | No fuzzy machinery is needed. |
 | `k = 1..2`, short dictionaries | deletion-neighborhood radix index + exact verifier | Measured headline region; avoids scanning the dictionary. |
-| `k > 2` | compact trie/FST + banded DP | Avoids the combinatorial deletion-record expansion. |
-| long dictionaries at `k = 1..2` | compact trie + lazy banded-DP automaton | Keeps construction memory bounded without false negatives. |
+| `k > 2` | radix trie/FST + banded DP | Avoids the combinatorial deletion-record expansion. |
+| long dictionaries at `k = 1..2` | radix trie + lazy banded-DP automaton | Keeps construction memory bounded without false negatives. |
 
 The first compact-trie banded-DP implementation was exact through `k=4`, but only 4.16x / 1.68x faster than native
 RapidFuzz at `k=3/4`. A query-local lazy DFA packs a complete clipped row into one u64 for queries through 15 bytes;
@@ -112,8 +112,8 @@ mutations, two-edit mutations, and length-guaranteed rejects:
 | Dictionary / queries | Shape | Auto plan | `k=1` | `k=2` | Tantivy `k=1/2` |
 |:---|:---|:---|---:|---:|---:|
 | English words / 10,000 | 370,105 words, mean 10.44 bytes | deletion / deletion | 2.91 ms | 45.5 ms | 485 ms / 4.183 s |
-| Wikipedia URLs / 10,000 | 97,054 strings, mean 47.85 bytes | deletion / trie | 16.1 ms | 488.5 ms | 480 ms / 2.428 s |
-| four-symbol DNA / 1,000 | 100,000 strings, exactly 100 bytes | trie / trie | 14.9 ms | 162.7 ms | 52.7 ms / 282.3 ms |
+| Wikipedia URLs / 10,000 | 97,054 strings, mean 47.85 bytes | deletion / trie | 15.9 ms | 502.6 ms | 480 ms / 2.428 s |
+| four-symbol DNA / 1,000 | 100,000 strings, exactly 100 bytes | trie / trie | 12.9 ms | 107.5 ms | 52.7 ms / 282.3 ms |
 
 The URL dictionary is Rust `fst` 0.4.7's bundled `wiki-urls-100000` file (97,054 actual lines), SHA-256
 `deb1ba1bb5005621de81bbc498922c5e06d3e7a9cb65b52ef854747a93b7ccc2`; its query file is
@@ -126,10 +126,14 @@ The DNA dictionary is StringWars `acgt_100.txt`, SHA-256
 `b0df691ddcc7e6db1544db3e472780602b824aff9eafca2efb567e3d10904381`; its query file is
 `ddd6318eb864b98cf7006d80b29fe51ad56ab270653152a14826ca9ba0bd249d`. Exact streams also matched RapidFuzz,
 with SHA-256 `eed6f71598e6848ce5734df1a37e9100ab69550ab3123dcb93870c9407cc750c` (`k=1`) and
-`1e2d9760941311937f2d9360fa14eee8d7cd8c5f12afaf17c260f9885ca5bc4e` (`k=2`). The persistent DNA trie is
-194,456,504 bytes, while Tantivy's complete process peaked near 79 MiB. That memory loss is the clearest current
-production blocker and motivates radix-compressing unary trie paths; latency wins alone do not justify a broad SOTA
-claim.
+`1e2d9760941311937f2d9360fa14eee8d7cd8c5f12afaf17c260f9885ca5bc4e` (`k=2`). Radix-compressing unary paths
+reduced the persistent DNA trie from 194,456,504 to 5,999,728 bytes, build time from about 97 to 19 ms, and isolated
+process peak from roughly 334 MiB to 39.5 MiB. It also reduced `k=1/2` latency from 14.9/162.7 ms to 12.9/107.5 ms.
+Tantivy's corresponding process peaked near 79 MiB, so the radix representation reverses the original memory loss as
+well as extending the latency lead. On URLs, the trie shrank from 27,589,304 to 4,796,744 bytes and build time from
+about 18 to 10 ms; median `k=2` query time regressed by roughly 3% in the final exactness run, from 488.5 to 502.6 ms.
+On English `k=4`, the trie portion shrank from 26,147,852 to 16,778,260 bytes and median latency improved from about
+17.05 to 16.49 s. These are single-machine measurements, not confidence intervals.
 
 ## Literature position
 

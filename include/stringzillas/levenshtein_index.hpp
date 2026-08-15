@@ -3,7 +3,7 @@
  *  @file include/stringzillas/levenshtein_index.hpp
  *  @author Ash Vardanian
  *
- *  Adaptively builds a lossless deletion-neighborhood filter or a compact trie for byte strings. Hash collisions can
+ *  Adaptively builds a lossless deletion-neighborhood filter or a radix trie for byte strings. Hash collisions can
  *  only add verifier work; they cannot alter returned matches. Query-local generations, automaton transitions, DP
  *  rows, and output are explicit, making one immutable index safe to search concurrently.
  */
@@ -49,8 +49,9 @@ class levenshtein_index {
         u32_t terminals_count = 0;
     };
     struct trie_edge_t {
+        u64_t label_offset = 0;
         u32_t child = 0;
-        u8_t symbol = 0;
+        u32_t label_length = 0;
     };
     struct trie_frame_t {
         u32_t node = 0;
@@ -265,9 +266,8 @@ class levenshtein_index {
 
     status_t build_trie_(bool fallback_only) noexcept {
         size_t const words_count = fallback_only ? fallback_words_count_ : size();
-        vector_t<u32_t> order {alloc_}, parents {alloc_}, word_nodes {alloc_}, child_cursors {alloc_},
-            terminal_cursors {alloc_}, stack {alloc_};
-        vector_t<u8_t> symbols {alloc_};
+        vector_t<u32_t> order {alloc_}, parents {alloc_}, depths {alloc_}, representatives {alloc_},
+            word_nodes {alloc_}, child_cursors {alloc_}, terminal_cursors {alloc_}, stack {alloc_};
         if (order.try_reserve(words_count) != status_t::success_k ||
             word_nodes.try_resize(size()) != status_t::success_k)
             return status_t::bad_alloc_k;
@@ -284,25 +284,43 @@ class levenshtein_index {
             return first_id < second_id;
         });
 
-        if (parents.try_push_back(0) != status_t::success_k || symbols.try_push_back(0) != status_t::success_k ||
-            stack.try_push_back(0) != status_t::success_k)
+        if (parents.try_push_back(0) != status_t::success_k || depths.try_push_back(0) != status_t::success_k ||
+            representatives.try_push_back(0) != status_t::success_k || stack.try_push_back(0) != status_t::success_k)
             return status_t::bad_alloc_k;
         span<char const> previous;
+        u32_t previous_id = 0;
         for (u32_t id : order) {
             span<char const> const word = word_(id);
+            if (word.size() > std::numeric_limits<u32_t>::max()) return status_t::overflow_risk_k;
             size_t common = 0, common_limit = sz_min_of_two(previous.size(), word.size());
             while (common != common_limit && previous[common] == word[common]) ++common;
-            if (stack.try_resize(common + 1) != status_t::success_k) return status_t::bad_alloc_k;
-            for (size_t position = common; position != word.size(); ++position) {
+            u32_t previous_child = stack.back();
+            while (depths[stack.back()] > common) {
+                previous_child = stack.back();
+                if (stack.try_resize(stack.size() - 1) != status_t::success_k) return status_t::bad_alloc_k;
+            }
+            if (depths[stack.back()] < common) {
                 if (parents.size() == std::numeric_limits<u32_t>::max()) return status_t::overflow_risk_k;
-                u32_t const node = static_cast<u32_t>(parents.size());
+                u32_t const branch = static_cast<u32_t>(parents.size());
                 if (parents.try_push_back(stack.back()) != status_t::success_k ||
-                    symbols.try_push_back(static_cast<u8_t>(word[position])) != status_t::success_k ||
-                    stack.try_push_back(node) != status_t::success_k)
+                    depths.try_push_back(static_cast<u32_t>(common)) != status_t::success_k ||
+                    representatives.try_push_back(previous_id) != status_t::success_k ||
+                    stack.try_push_back(branch) != status_t::success_k)
+                    return status_t::bad_alloc_k;
+                parents[previous_child] = branch;
+            }
+            if (word.size() != common) {
+                if (parents.size() == std::numeric_limits<u32_t>::max()) return status_t::overflow_risk_k;
+                u32_t const leaf = static_cast<u32_t>(parents.size());
+                if (parents.try_push_back(stack.back()) != status_t::success_k ||
+                    depths.try_push_back(static_cast<u32_t>(word.size())) != status_t::success_k ||
+                    representatives.try_push_back(id) != status_t::success_k ||
+                    stack.try_push_back(leaf) != status_t::success_k)
                     return status_t::bad_alloc_k;
             }
             word_nodes[id] = stack.back();
             previous = word;
+            previous_id = id;
         }
 
         size_t const nodes_count = parents.size();
@@ -323,8 +341,12 @@ class levenshtein_index {
             edge_offset += trie_nodes_[node].edges_count;
             terminal_offset += trie_nodes_[node].terminals_count;
         }
-        for (u32_t node = 1; node != nodes_count; ++node)
-            trie_edges_[child_cursors[parents[node]]++] = trie_edge_t {node, symbols[node]};
+        for (u32_t node = 1; node != nodes_count; ++node) {
+            u32_t const parent = parents[node];
+            u32_t const representative = representatives[node];
+            trie_edges_[child_cursors[parent]++] =
+                trie_edge_t {offsets_[representative] + depths[parent], node, depths[node] - depths[parent]};
+        }
         for (u32_t id : order)
             trie_terminals_[terminal_cursors[word_nodes[id]]++] = id;
         return status_t::success_k;
@@ -424,7 +446,18 @@ class levenshtein_index {
                 continue;
             }
             trie_edge_t const edge = trie_edges_[frame.next_edge++];
-            dfa_step_t const step = transition(frame.state, edge.symbol);
+            u64_t state = frame.state;
+            dfa_step_t step;
+            bool alive = true;
+            for (size_t offset = 0; offset != edge.label_length; ++offset) {
+                step = transition(state, static_cast<u8_t>(tape_[edge.label_offset + offset]));
+                if (step.min_distance > bound) {
+                    alive = false;
+                    break;
+                }
+                state = step.state;
+            }
+            if (!alive) continue;
             trie_node_t const &child = trie_nodes_[edge.child];
             if (step.terminal_distance <= bound && child.terminals_count)
                 if (status_t status = emit_terminals(edge.child, step.terminal_distance);
@@ -432,8 +465,8 @@ class levenshtein_index {
                     return status;
             if (step.min_distance <= bound) {
                 if (scratch.dfa_frames.try_push_back(
-                        dfa_frame_t {step.state, edge.child, child.first_edge,
-                                     child.first_edge + child.edges_count, frame.depth + 1}) !=
+                        dfa_frame_t {state, edge.child, child.first_edge, child.first_edge + child.edges_count,
+                                     frame.depth + edge.label_length}) !=
                     status_t::success_k)
                     return status_t::bad_alloc_k;
             }
@@ -552,7 +585,19 @@ class levenshtein_index {
                 continue;
             }
             trie_edge_t const edge = trie_edges_[frame.next_edge++];
-            dfa_step_t const step = transition(frame.state, frame.depth, edge.symbol);
+            u64_t state = frame.state;
+            dfa_step_t step;
+            bool alive = true;
+            for (u32_t offset = 0; offset != edge.label_length; ++offset) {
+                step = transition(state, frame.depth + offset,
+                                  static_cast<u8_t>(tape_[edge.label_offset + offset]));
+                if (step.min_distance > bound) {
+                    alive = false;
+                    break;
+                }
+                state = step.state;
+            }
+            if (!alive) continue;
             trie_node_t const &child = trie_nodes_[edge.child];
             if (step.terminal_distance <= bound && child.terminals_count)
                 if (status_t status = emit_terminals(edge.child, step.terminal_distance);
@@ -560,8 +605,8 @@ class levenshtein_index {
                     return status;
             if (step.min_distance <= bound) {
                 if (scratch.dfa_frames.try_push_back(
-                        dfa_frame_t {step.state, edge.child, child.first_edge,
-                                     child.first_edge + child.edges_count, frame.depth + 1}) !=
+                        dfa_frame_t {state, edge.child, child.first_edge, child.first_edge + child.edges_count,
+                                     frame.depth + edge.label_length}) !=
                     status_t::success_k)
                     return status_t::bad_alloc_k;
             }
@@ -614,44 +659,56 @@ class levenshtein_index {
                 continue;
             }
             trie_edge_t const edge = trie_edges_[frame.next_edge++];
-            size_t const previous_depth = frame.depth;
-            size_t const current_depth = previous_depth + 1;
-            size_t const previous_from = previous_depth > bound ? previous_depth - bound : 0;
-            size_t const previous_to = sz_min_of_two(query.size(), previous_depth + bound);
-            size_t const current_from = current_depth > bound ? current_depth - bound : 0;
-            size_t const current_to = sz_min_of_two(query.size(), current_depth + bound);
-            u16_t const *previous_row = scratch.trie_rows.data() + previous_depth * stride;
-            u16_t *current_row = scratch.trie_rows.data() + current_depth * stride;
-            auto const previous_at = [&](size_t column) noexcept -> u16_t {
-                return column >= previous_from && column <= previous_to ? previous_row[column - previous_from] : cap;
-            };
             u16_t row_min = cap;
-            for (size_t column = current_from; column <= current_to; ++column) {
-                u16_t value;
-                if (column == 0) value = static_cast<u16_t>(sz_min_of_two(current_depth, size_t(cap)));
-                else {
-                    unsigned const deletion = unsigned(previous_at(column)) + 1;
-                    unsigned const insertion =
-                        column > current_from ? unsigned(current_row[column - current_from - 1]) + 1 : cap;
-                    unsigned const substitution =
-                        unsigned(previous_at(column - 1)) + (query[column - 1] != static_cast<char>(edge.symbol));
-                    value = static_cast<u16_t>(sz_min_of_two(std::min({deletion, insertion, substitution}),
-                                                             unsigned(cap)));
+            u16_t terminal_distance = cap;
+            bool alive = true;
+            for (u32_t edge_offset = 0; edge_offset != edge.label_length; ++edge_offset) {
+                size_t const previous_depth = frame.depth + edge_offset;
+                size_t const current_depth = previous_depth + 1;
+                size_t const previous_from = previous_depth > bound ? previous_depth - bound : 0;
+                size_t const previous_to = sz_min_of_two(query.size(), previous_depth + bound);
+                size_t const current_from = current_depth > bound ? current_depth - bound : 0;
+                size_t const current_to = sz_min_of_two(query.size(), current_depth + bound);
+                u16_t const *previous_row = scratch.trie_rows.data() + previous_depth * stride;
+                u16_t *current_row = scratch.trie_rows.data() + current_depth * stride;
+                auto const previous_at = [&](size_t column) noexcept -> u16_t {
+                    return column >= previous_from && column <= previous_to ? previous_row[column - previous_from]
+                                                                            : cap;
+                };
+                row_min = cap;
+                terminal_distance = cap;
+                for (size_t column = current_from; column <= current_to; ++column) {
+                    u16_t value;
+                    if (column == 0) value = static_cast<u16_t>(sz_min_of_two(current_depth, size_t(cap)));
+                    else {
+                        unsigned const deletion = unsigned(previous_at(column)) + 1;
+                        unsigned const insertion =
+                            column > current_from ? unsigned(current_row[column - current_from - 1]) + 1 : cap;
+                        unsigned const substitution = unsigned(previous_at(column - 1)) +
+                                                      (query[column - 1] !=
+                                                       static_cast<char>(tape_[edge.label_offset + edge_offset]));
+                        value = static_cast<u16_t>(sz_min_of_two(
+                            std::min({deletion, insertion, substitution}), unsigned(cap)));
+                    }
+                    current_row[column - current_from] = value;
+                    row_min = sz_min_of_two(row_min, value);
+                    if (column == query.size()) terminal_distance = value;
                 }
-                current_row[column - current_from] = value;
-                row_min = sz_min_of_two(row_min, value);
+                if (row_min > bound) {
+                    alive = false;
+                    break;
+                }
             }
-            if (query.size() >= current_from && query.size() <= current_to) {
-                u16_t const distance = current_row[query.size() - current_from];
-                if (distance <= bound)
-                    if (status_t status = emit_terminals(edge.child, distance); status != status_t::success_k)
-                        return status;
-            }
+            if (!alive) continue;
+            if (terminal_distance <= bound)
+                if (status_t status = emit_terminals(edge.child, terminal_distance);
+                    status != status_t::success_k)
+                    return status;
             if (row_min <= bound) {
                 trie_node_t const &child = trie_nodes_[edge.child];
                 if (scratch.trie_frames.try_push_back(trie_frame_t {
                         edge.child, child.first_edge, child.first_edge + child.edges_count,
-                        static_cast<u32_t>(current_depth)}) != status_t::success_k)
+                        static_cast<u32_t>(frame.depth + edge.label_length)}) != status_t::success_k)
                     return status_t::bad_alloc_k;
             }
         }
