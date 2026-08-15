@@ -508,6 +508,21 @@ utf8_engine = szs.LevenshteinDistancesUTF8(mismatch=5)
 utf8_engine(sz.Strs(["café", "naïve"]), sz.Strs(["caffe", "naive"]))
 ```
 
+### `LevenshteinIndex`
+
+`LevenshteinIndex(dictionary, max_distance=2, deletion_max_word_length=None)` copies an immutable dictionary for
+repeated exact fuzzy retrieval. Calling `index(query, bound=None)` returns an unordered list of
+`(dictionary_id, distance)` pairs; duplicate values retain distinct IDs. Ordinary Python iterables and `sz.Strs` are
+accepted. The implementation reuses query-local scratch rather than allocating a dense matrix.
+
+```python
+index = szs.LevenshteinIndex([b"book", b"back", b"book", b"boon"], max_distance=2)
+assert sorted(index(b"cook", bound=1)) == [(0, 1), (2, 1)]
+```
+
+This class compares encoded bytes. Use `LevenshteinDistancesUTF8` when codepoint semantics are required; a sparse
+UTF-8 dictionary index is not exposed yet.
+
 ### `NeedlemanWunschScores` and `SmithWatermanScores`
 
 `NeedlemanWunschScores(byte_to_class, class_substitution_costs, open=-1, extend=-1, capabilities=None)` computes global alignment scores.

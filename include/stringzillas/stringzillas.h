@@ -24,6 +24,7 @@
 #define STRINGZILLAS_H_
 
 #include <stringzilla/stringzilla.h> // `sz_sequence_t` and other types
+#include <stringzillas/levenshtein_index.h> // `szs_levenshtein_index_match_t`
 
 #ifdef __cplusplus
 extern "C" {
@@ -333,6 +334,65 @@ SZ_API_RUNTIME sz_status_t szs_levenshtein_within_u64tape(                      
  *  @param[in] engine Engine handle to free.
  */
 SZ_API_RUNTIME void szs_levenshtein_within_free(szs_levenshtein_within_t engine);
+
+/*  APIs for exact sparse retrieval from an immutable byte-string dictionary. The index owns a copy of the
+ *  dictionary. One index may be shared by concurrent readers; each reader must use a distinct search handle.
+ */
+typedef void *szs_levenshtein_index_t;
+typedef void *szs_levenshtein_index_search_t;
+
+/**
+ *  @brief Build an exact immutable Levenshtein index over a sequence dictionary.
+ *  @param[in] dictionary Dictionary copied into the index; duplicate strings retain distinct IDs.
+ *  @param[in] max_distance Largest bound accepted by searches.
+ *  @param[in] deletion_max_word_length Maximum byte length indexed through deletion neighborhoods, or
+ *             `SZ_SIZE_MAX` to select the deletion/radix-trie representation automatically.
+ *  @param[in] alloc Reserved custom allocator; pass NULL for the default allocator.
+ *  @param[out] index Initialized index handle.
+ *  @param[out] error_message Optional detailed error information.
+ */
+SZ_API_RUNTIME sz_status_t szs_levenshtein_index_init(              //
+    sz_sequence_t const *dictionary, sz_size_t max_distance,        //
+    sz_size_t deletion_max_word_length,                             //
+    sz_memory_allocator_t const *alloc,                             //
+    szs_levenshtein_index_t *index, char const **error_message);
+
+/** @copydoc szs_levenshtein_index_init */
+SZ_API_RUNTIME sz_status_t szs_levenshtein_index_init_u32tape(      //
+    sz_sequence_u32tape_t const *dictionary, sz_size_t max_distance, //
+    sz_size_t deletion_max_word_length,                              //
+    sz_memory_allocator_t const *alloc,                              //
+    szs_levenshtein_index_t *index, char const **error_message);
+
+/** @copydoc szs_levenshtein_index_init */
+SZ_API_RUNTIME sz_status_t szs_levenshtein_index_init_u64tape(      //
+    sz_sequence_u64tape_t const *dictionary, sz_size_t max_distance, //
+    sz_size_t deletion_max_word_length,                              //
+    sz_memory_allocator_t const *alloc,                              //
+    szs_levenshtein_index_t *index, char const **error_message);
+
+/** @brief Allocate reusable query-local state for one search thread. */
+SZ_API_RUNTIME sz_status_t szs_levenshtein_index_search_init( //
+    szs_levenshtein_index_t index,                            //
+    szs_levenshtein_index_search_t *search, char const **error_message);
+
+/**
+ *  @brief Retrieve every dictionary entry within @p bound edits of one byte string.
+ *  @param[out] matches Borrowed result span, valid until the next call using @p search or until it is freed.
+ *  @param[out] matches_count Number of elements in @p matches.
+ *  @note Result order is unspecified. Sort by `id` explicitly when stable order is required.
+ */
+SZ_API_RUNTIME sz_status_t szs_levenshtein_index_find(                 //
+    szs_levenshtein_index_t index, szs_levenshtein_index_search_t search, //
+    sz_cptr_t query, sz_size_t query_length, sz_size_t bound,              //
+    szs_levenshtein_index_match_t const **matches, sz_size_t *matches_count, //
+    char const **error_message);
+
+/** @brief Free one reusable search handle. */
+SZ_API_RUNTIME void szs_levenshtein_index_search_free(szs_levenshtein_index_search_t search);
+
+/** @brief Free an immutable dictionary index. Search handles must be freed first. */
+SZ_API_RUNTIME void szs_levenshtein_index_free(szs_levenshtein_index_t index);
 
 /**
  *  @brief Initialize UTF-8 aware Levenshtein distance engine.

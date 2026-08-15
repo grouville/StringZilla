@@ -15,6 +15,12 @@ Production design for issue #243. Experimental evidence remains on branch
   benchmark.
 - Report build time, owned dictionary bytes, persistent index bytes, scratch, output, and maximum supported sizes.
 
+The byte-string engine is now exposed as a C++ class, an opaque C index plus one reusable search handle per reader,
+and a Python `LevenshteinIndex`. The C result is a borrowed sparse span valid until that search handle's next call;
+Python copies it into an unordered list of `(ID, distance)` pairs. The C shim accepts sequence, 32-bit tape, and
+64-bit tape dictionaries. Custom C allocators, other language bindings, batch/parallel query submission, and the
+separately named valid-UTF-8/codepoint index remain release work.
+
 ## Algorithm regions
 
 | Region | Exact engine | Reason |

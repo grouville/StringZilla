@@ -11,6 +11,7 @@
 #define STRINGZILLAS_LEVENSHTEIN_INDEX_HPP_
 
 #include "stringzillas/types.hpp"
+#include "stringzillas/levenshtein_index.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -21,10 +22,7 @@
 namespace ashvardanian {
 namespace stringzillas {
 
-struct levenshtein_index_match_t {
-    u32_t id = 0;
-    u8_t distance = 0;
-};
+using levenshtein_index_match_t = ::szs_levenshtein_index_match_t;
 
 template <typename allocator_type_ = std::allocator<char>>
 class levenshtein_index {
@@ -377,7 +375,7 @@ class levenshtein_index {
             for (size_t offset = node.first_terminal; offset != node.first_terminal + node.terminals_count; ++offset) {
                 u32_t const id = trie_terminals_[offset];
                 if (fallback_only && word_(id).size() <= deletion_max_word_length_) continue;
-                if (status_t status = matches.try_push_back(match_t {id, distance});
+                if (status_t status = matches.try_push_back(match_t {id, distance, {}});
                     status != status_t::success_k)
                     return status;
             }
@@ -499,7 +497,7 @@ class levenshtein_index {
             for (size_t offset = node.first_terminal; offset != node.first_terminal + node.terminals_count; ++offset) {
                 u32_t const id = trie_terminals_[offset];
                 if (fallback_only && word_(id).size() <= deletion_max_word_length_) continue;
-                if (status_t status = matches.try_push_back(match_t {id, distance});
+                if (status_t status = matches.try_push_back(match_t {id, distance, {}});
                     status != status_t::success_k)
                     return status;
             }
@@ -637,7 +635,7 @@ class levenshtein_index {
             for (size_t offset = node.first_terminal; offset != node.first_terminal + node.terminals_count; ++offset) {
                 u32_t const id = trie_terminals_[offset];
                 if (fallback_only && word_(id).size() <= deletion_max_word_length_) continue;
-                if (status_t status = matches.try_push_back(match_t {id, static_cast<u8_t>(distance)});
+                if (status_t status = matches.try_push_back(match_t {id, static_cast<u8_t>(distance), {}});
                     status != status_t::success_k)
                     return status;
             }
@@ -884,7 +882,7 @@ class levenshtein_index {
                     scratch.generations[id] = scratch.generation;
                     u8_t const distance = verify_(id, query, bound, scratch);
                     if (distance <= bound)
-                        if (status_t status = matches.try_push_back(match_t {id, distance});
+                        if (status_t status = matches.try_push_back(match_t {id, distance, {}});
                             status != status_t::success_k)
                             return status;
                 }
@@ -901,7 +899,7 @@ class levenshtein_index {
                     scratch.generations[id] = scratch.generation;
                     u8_t const distance = verify_(id, query, bound, scratch);
                     if (distance <= bound)
-                        if (status_t status = matches.try_push_back(match_t {id, distance});
+                        if (status_t status = matches.try_push_back(match_t {id, distance, {}});
                             status != status_t::success_k)
                             return status;
                 }

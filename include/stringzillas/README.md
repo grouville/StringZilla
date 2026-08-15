@@ -192,6 +192,37 @@ void run(void) {
 }
 ```
 
+### Immutable Levenshtein Dictionary Index
+
+When one dictionary is reused across many fuzzy queries, `szs_levenshtein_index_t` returns the complete sparse set of
+matching dictionary IDs and exact unit-cost distances instead of constructing a dense query-by-candidate matrix. The
+index owns its byte strings and is immutable after construction. Create one `szs_levenshtein_index_search_t` per
+concurrent reader; its borrowed output remains valid until that search handle is used again.
+
+```c
+char const tape[] = "bookbackbookboon";
+sz_u32_t const offsets[] = {0, 4, 8, 12, 16};
+sz_sequence_u32tape_t dictionary = {tape, offsets, 4};
+char const *error = NULL;
+szs_levenshtein_index_t index = NULL;
+szs_levenshtein_index_search_t search = NULL;
+
+assert(szs_levenshtein_index_init_u32tape(&dictionary, 2, SZ_SIZE_MAX, NULL, &index, &error) == sz_success_k);
+assert(szs_levenshtein_index_search_init(index, &search, &error) == sz_success_k);
+
+szs_levenshtein_index_match_t const *matches = NULL;
+sz_size_t count = 0;
+assert(szs_levenshtein_index_find(index, search, "cook", 4, 1, &matches, &count, &error) == sz_success_k);
+assert(count == 2); // IDs 0 and 2 are duplicate "book" entries, each at distance one.
+
+szs_levenshtein_index_search_free(search);
+szs_levenshtein_index_free(index);
+```
+
+Passing `SZ_SIZE_MAX` selects deletion-neighborhood indexing for short dictionaries and radix-trie automata when
+deletion expansion would be excessive. The current API is byte-level; valid-UTF-8/codepoint retrieval will use a
+separate explicitly named engine.
+
 ## Alignment Scores
 
 For sequence alignment the engines maximize a __signed__ similarity score, written into an `sz_ssize_t` matrix.

@@ -130,6 +130,7 @@ extern sz_memory_allocator_t default_allocator;
 extern PyTypeObject DeviceScopeType;
 extern PyTypeObject LevenshteinDistancesType;
 extern PyTypeObject LevenshteinWithinKType;
+extern PyTypeObject LevenshteinIndexType;
 extern PyTypeObject LevenshteinDistancesUTF8Type;
 extern PyTypeObject NeedlemanWunschType;
 extern PyTypeObject SmithWatermanType;

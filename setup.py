@@ -682,6 +682,7 @@ STRINGZILLAS_API_CPP_SOURCES = [
     "c/stringzillas/runtime.cpp",
     "c/stringzillas/levenshtein.cpp",
     "c/stringzillas/levenshtein_within.cpp",
+    "c/stringzillas/levenshtein_index.cpp",
     "c/stringzillas/needleman_wunsch.cpp",
     "c/stringzillas/smith_waterman.cpp",
     "c/stringzillas/fingerprints.cpp",
@@ -690,6 +691,7 @@ STRINGZILLAS_API_CU_SOURCES = [
     "c/stringzillas/runtime.cu",
     "c/stringzillas/levenshtein.cu",
     "c/stringzillas/levenshtein_within.cu",
+    "c/stringzillas/levenshtein_index.cu",
     "c/stringzillas/needleman_wunsch.cu",
     "c/stringzillas/smith_waterman.cu",
     "c/stringzillas/fingerprints.cu",
@@ -783,6 +785,7 @@ elif sz_target == "stringzillas-cpus":
                 "python/stringzillas/stringzillas.c",
                 "python/stringzillas/device_scope.c",
                 "python/stringzillas/similarities.c",
+                "python/stringzillas/levenshtein_index.c",
                 "python/stringzillas/fingerprints.c",
             ]
             + STRINGZILLAS_API_CPP_SOURCES
@@ -825,6 +828,7 @@ elif sz_target == "stringzillas-cuda":
                 "python/stringzillas/stringzillas.c",
                 "python/stringzillas/device_scope.c",
                 "python/stringzillas/similarities.c",
+                "python/stringzillas/levenshtein_index.c",
                 "python/stringzillas/fingerprints.c",
             ]
             + STRINGZILLAS_API_CU_SOURCES
