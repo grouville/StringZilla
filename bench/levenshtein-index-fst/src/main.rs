@@ -1,8 +1,9 @@
 //! Independent `fst` Levenshtein-automaton baseline for immutable-dictionary retrieval.
 //!
 //! `fst` scores Unicode scalar values and returns matching keys/values, but not their distances. Run this baseline on
-//! ASCII data when comparing it to StringZilla's byte index. The StringZilla path currently materializes the richer
-//! `(dictionary ID, distance)` result, so this benchmark is deliberately favorable to `fst`.
+//! ASCII data when comparing it to StringZilla's byte index, or set `FST_ALLOW_UNICODE=1` when comparing it to the
+//! separately named UTF-8/codepoint index. StringZilla materializes the richer `(dictionary ID, distance)` result, so
+//! this benchmark is deliberately favorable to `fst`.
 
 use fst::automaton::Levenshtein;
 use fst::{IntoStreamer, Map, Streamer};
@@ -19,6 +20,30 @@ fn load_lines(path: &str, limit: usize) -> Result<Vec<String>, Box<dyn std::erro
         .collect())
 }
 
+fn verify_unicode_contract() -> Result<(), Box<dyn std::error::Error>> {
+    // All one-codepoint strings are mutually within one substitution. In fst 0.4.7, substitutions between two
+    // multibyte scalars sharing the same first UTF-8 byte are unexpectedly absent; fail before timing incomparable
+    // output if that pinned behavior is still present.
+    let mut keys = vec!["é", "Ѐ", "А"];
+    keys.sort_unstable();
+    let map = Map::from_iter(keys.iter().enumerate().map(|(id, key)| (*key, id as u64)))?;
+    let mut matches = 0usize;
+    for query in &keys {
+        let automaton = Levenshtein::new(query, 1)?;
+        let mut stream = map.search(&automaton).into_stream();
+        while stream.next().is_some() {
+            matches += 1;
+        }
+    }
+    if matches != 9 {
+        return Err(format!(
+            "fst Unicode smoke test failed: expected 9 one-codepoint matches, observed {matches}"
+        )
+        .into());
+    }
+    Ok(())
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
     if args.len() < 3 || args.len() > 4 {
@@ -33,7 +58,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map(|value| value.parse::<usize>())
         .transpose()?;
     let repeats = env::var("FST_REPEATS").map_or(Ok(3), |value| value.parse::<usize>())?;
-    if dictionary
+    let print_matches = env::var_os("FST_PRINT_MATCHES").is_some();
+    let allow_unicode = env::var_os("FST_ALLOW_UNICODE").is_some();
+    if allow_unicode {
+        verify_unicode_contract()?;
+    }
+    if !allow_unicode && dictionary
         .iter()
         .chain(&queries)
         .any(|text| !text.is_ascii())
@@ -55,9 +85,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let build_start = Instant::now();
     let map = Map::from_iter(keyed_words)?;
     println!(
-        "dictionary={} queries={} build={:.6}s fst_bytes={}",
+        "dictionary={} queries={} semantics={} build={:.6}s fst_bytes={}",
         dictionary.len(),
         queries.len(),
+        if allow_unicode { "unicode-codepoints" } else { "ascii-byte-parity" },
         build_start.elapsed().as_secs_f64(),
         map.as_fst().as_bytes().len()
     );
@@ -82,7 +113,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 };
                 let mut stream = map.search(&automaton).into_stream();
-                while let Some((_key, id)) = stream.next() {
+                while let Some((key, id)) = stream.next() {
+                    if print_matches {
+                        eprintln!("k={bound} query={query:?} key={:?}", String::from_utf8_lossy(key));
+                    }
                     matches_count += 1;
                     checksum = checksum
                         .wrapping_mul(0x9E37_79B1_85EB_CA87)

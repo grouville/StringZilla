@@ -24,8 +24,9 @@ static std::vector<std::string> load_lines(char const *path, std::size_t limit =
     return lines;
 }
 
-static bool dump_matches(szs::levenshtein_index<> const &index, std::vector<std::string> const &queries,
-                         std::uint8_t bound, std::string const &path) {
+template <typename index_type_>
+static bool dump_matches(index_type_ const &index, std::vector<std::string> const &queries, std::uint8_t bound,
+                         std::string const &path) {
     std::ofstream output(path, std::ios::binary);
     if (!output) return false;
     char const magic[8] = {'S', 'Z', 'L', 'E', 'V', '0', '0', '1'};
@@ -36,8 +37,8 @@ static bool dump_matches(szs::levenshtein_index<> const &index, std::vector<std:
     output.write(reinterpret_cast<char const *>(&queries_size), sizeof(queries_size));
     output.write(reinterpret_cast<char const *>(&bound), sizeof(bound));
 
-    szs::levenshtein_index<>::scratch_t scratch;
-    szs::levenshtein_index<>::matches_t matches;
+    typename index_type_::scratch_t scratch;
+    typename index_type_::matches_t matches;
     for (auto const &query : queries) {
         if (index.find({query.data(), query.size()}, bound, scratch, matches) != sz::status_t::success_k) return false;
         std::sort(matches.begin(), matches.end(), [](auto const &a, auto const &b) {
@@ -53,32 +54,12 @@ static bool dump_matches(szs::levenshtein_index<> const &index, std::vector<std:
     return output.good();
 }
 
-int main(int argc, char **argv) {
-    if (argc < 3 || argc > 5) {
-        std::cerr << "usage: levenshtein_index DICTIONARY QUERIES [QUERY_LIMIT] [DUMP_PREFIX]\n";
-        return 2;
-    }
-    std::size_t const query_limit = argc >= 4 ? std::stoull(argv[3]) : 0;
-    std::string const dump_prefix = argc == 5 ? argv[4] : "";
-    auto const dictionary = load_lines(argv[1]);
-    auto const queries = load_lines(argv[2], query_limit);
-    std::cout << "dictionary=" << dictionary.size() << " queries=" << queries.size() << '\n';
-    char const *deletion_max_length_env = std::getenv("SZ_LEVENSHTEIN_DELETION_MAX_LENGTH");
-    std::size_t const deletion_max_length =
-        deletion_max_length_env ? std::stoull(deletion_max_length_env)
-                                : szs::levenshtein_index<>::automatic_deletion_max_word_length_k;
-
-    std::vector<std::uint8_t> max_distances = {1, 2, 4};
-    if (char const *requested_max = std::getenv("SZ_LEVENSHTEIN_MAX_DISTANCE")) {
-        int const parsed = std::stoi(requested_max);
-        if (parsed != 1 && parsed != 2 && parsed != 4) {
-            std::cerr << "SZ_LEVENSHTEIN_MAX_DISTANCE must be 1, 2, or 4\n";
-            return 2;
-        }
-        max_distances = {static_cast<std::uint8_t>(parsed)};
-    }
+template <typename index_type_>
+static int run(std::vector<std::string> const &dictionary, std::vector<std::string> const &queries,
+               std::size_t deletion_max_length, std::vector<std::uint8_t> const &max_distances,
+               std::string const &dump_prefix) {
     for (std::uint8_t max_distance : max_distances) {
-        szs::levenshtein_index<> index;
+        index_type_ index;
         auto const build_start = std::chrono::steady_clock::now();
         if (sz::status_t status = index.try_build(dictionary, max_distance, deletion_max_length);
             status != sz::status_t::success_k) {
@@ -92,16 +73,15 @@ int main(int argc, char **argv) {
                   << " trie_bytes=" << index.trie_bytes() << " dictionary_bytes=" << index.dictionary_bytes()
                   << " deletion_max_length=" << index.deletion_max_word_length() << '\n';
 
-        szs::levenshtein_index<>::scratch_t scratch;
-        szs::levenshtein_index<>::matches_t matches;
+        typename index_type_::scratch_t scratch;
+        typename index_type_::matches_t matches;
         std::uint8_t const first_bound = max_distance <= 2 ? max_distance : 3;
         for (std::uint8_t bound = first_bound; bound <= max_distance; ++bound) {
             for (int repeat = 0; repeat != 3; ++repeat) {
                 std::size_t matches_count = 0;
                 auto const start = std::chrono::steady_clock::now();
                 for (auto const &query : queries) {
-                    if (index.find({query.data(), query.size()}, bound, scratch, matches) !=
-                        sz::status_t::success_k)
+                    if (index.find({query.data(), query.size()}, bound, scratch, matches) != sz::status_t::success_k)
                         return 4;
                     matches_count += matches.size();
                 }
@@ -119,4 +99,37 @@ int main(int argc, char **argv) {
             }
         }
     }
+    return 0;
+}
+
+int main(int argc, char **argv) {
+    if (argc < 3 || argc > 5) {
+        std::cerr << "usage: levenshtein_index DICTIONARY QUERIES [QUERY_LIMIT] [DUMP_PREFIX]\n";
+        return 2;
+    }
+    std::size_t const query_limit = argc >= 4 ? std::stoull(argv[3]) : 0;
+    std::string const dump_prefix = argc == 5 ? argv[4] : "";
+    auto const dictionary = load_lines(argv[1]);
+    auto const queries = load_lines(argv[2], query_limit);
+    bool const utf8 = std::getenv("SZ_LEVENSHTEIN_UTF8") != nullptr;
+    std::cout << "dictionary=" << dictionary.size() << " queries=" << queries.size()
+              << " semantics=" << (utf8 ? "utf8-codepoints" : "bytes") << '\n';
+    char const *deletion_max_length_env = std::getenv("SZ_LEVENSHTEIN_DELETION_MAX_LENGTH");
+    std::size_t const deletion_max_length =
+        deletion_max_length_env ? std::stoull(deletion_max_length_env)
+                                : szs::levenshtein_index<>::automatic_deletion_max_word_length_k;
+
+    std::vector<std::uint8_t> max_distances = {1, 2, 4};
+    if (char const *requested_max = std::getenv("SZ_LEVENSHTEIN_MAX_DISTANCE")) {
+        int const parsed = std::stoi(requested_max);
+        if (parsed != 1 && parsed != 2 && parsed != 4) {
+            std::cerr << "SZ_LEVENSHTEIN_MAX_DISTANCE must be 1, 2, or 4\n";
+            return 2;
+        }
+        max_distances = {static_cast<std::uint8_t>(parsed)};
+    }
+    return utf8 ? run<szs::levenshtein_index_utf8<>>(dictionary, queries, deletion_max_length, max_distances,
+                                                     dump_prefix)
+                : run<szs::levenshtein_index<>>(dictionary, queries, deletion_max_length, max_distances,
+                                                dump_prefix);
 }

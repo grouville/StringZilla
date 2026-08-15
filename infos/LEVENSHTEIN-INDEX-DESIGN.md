@@ -15,11 +15,35 @@ Production design for issue #243. Experimental evidence remains on branch
   benchmark.
 - Report build time, owned dictionary bytes, persistent index bytes, scratch, output, and maximum supported sizes.
 
-The byte-string engine is now exposed as a C++ class, an opaque C index plus one reusable search handle per reader,
-and a Python `LevenshteinIndex`. The C result is a borrowed sparse span valid until that search handle's next call;
-Python copies it into an unordered list of `(ID, distance)` pairs. The C shim accepts sequence, 32-bit tape, and
-64-bit tape dictionaries. Custom C allocators, other language bindings, batch/parallel query submission, and the
-separately named valid-UTF-8/codepoint index remain release work.
+The byte-string and validated UTF-8/codepoint engines are exposed as separate C++ classes, separate opaque C handles,
+and Python `LevenshteinIndex` / `LevenshteinIndexUTF8` classes. The C result is a borrowed sparse span valid until that
+search handle's next call; Python copies it into an unordered list of `(ID, distance)` pairs. Both C shims accept
+sequence, 32-bit tape, and 64-bit tape dictionaries. The UTF-8 facade rejects malformed or truncated input rather
+than replacing it, and its deletion/trie engine indexes decoded UTF-32 codepoints. Custom C allocators, other language
+bindings, and batch/parallel query submission remain release work.
+
+On the all-ASCII pinned English corpus, where byte and codepoint answers coincide, the UTF-8 facade's median query
+time was 3.15 ms at `k=1` and 60.63 ms at `k=2`, versus 2.97 ms and 45.51 ms for the byte API. The extra validation,
+transcoding, and wider dictionary tape therefore cost about 6% and 33% respectively; owned dictionary storage grew
+from 6.46 MB to 16.94 MB.
+
+A deterministic non-ASCII audit mapped every lowercase ASCII letter bijectively onto U+0400..U+0419 in both pinned
+files. This is not a natural-language corpus, but it preserves every expected edit distance while forcing valid
+two-byte UTF-8/codepoint execution. The transcoded dictionary/query SHA-256 values were
+`17870ef9f2ad2ed56f94cde8d8239c80f0f9bbb5295b6b425d8d8b5e9bbef0de` and
+`e3c344a21bc50cdeb5d9a0cd700d32d2a203a6dbcbf2612c7d6db6613ede3fb3`. Native RapidFuzz
+`CachedLevenshtein<char32_t>` took 24.42 s at `k=1` and 37.65 s at `k=2`; StringZilla took 3.26 ms and 61.44 ms,
+about 7,495x and 613x faster. RapidFuzz decodes the entire corpus before timing, while StringZilla still validates and
+decodes each query inside the timed call, favoring RapidFuzz. More importantly, complete per-query `(ID, distance)`
+streams were byte-identical at both bounds and reproduced the topology-preserved hashes above (`10e1ce...38a6` and
+`9fa72b...7bb4`).
+
+Rust `fst` 0.4.7 cannot currently serve as the Unicode baseline despite documenting Unicode-scalar semantics. On a
+three-key smoke test where `"é"`, `"Ѐ"`, and `"А"` must produce nine matches at distance one, it returned seven,
+omitting the two substitutions between multibyte scalars sharing the same leading UTF-8 byte. On the transcoded
+corpus it consequently returned only 362/1,064 rather than 9,103/201,190 matches. The checked-in harness now fails its
+Unicode contract smoke test before timing, and those incomparable timings are excluded. A natural multilingual corpus
+and additional same-contract Unicode index remain claim-gate work.
 
 ## Algorithm regions
 
