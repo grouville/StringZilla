@@ -1739,8 +1739,12 @@ struct levenshtein_distance_within<char, capability_, std::enable_if_t<(capabili
      *      mask guard that parks finished lanes) and reports a mismatch. The whole loop breaks once no lane is still
      *      alive, so a tile of hopeless pairs costs its shortest proof, not its longest scan.
      *
+     *      Instead of gathering `match_masks[lane][symbol]` per text position - an eight-lane VPGATHERQQ costs
+     *      ~20-30 cycles per position - the setup precomputes each lane's `Eq` word per position with scalar
+     *      L1 table hits while visiting the text once, and the scan streams one aligned 64-byte load per position.
+     *
      *      @p scratch_space holds the `match_masks[8][256]` table (`match_masks_bytes_k`) followed by a
-     *      transposed-text buffer of at least `max_longer * 8` bytes - the same layout as `distances_8x64_`.
+     *      64-byte-aligned `Eq` buffer of `max_longer * 8` `u64` words (plus alignment slack).
      */
     template <typename results_writer_>
     status_t within_8x64_(lane_pairs_view<char_t> const &pairs, results_writer_ &results,
@@ -1749,12 +1753,13 @@ struct levenshtein_distance_within<char, capability_, std::enable_if_t<(capabili
         size_t max_longer = 0;
         for (index_t lane_index = 0; lane_index != pairs.lanes_count(); ++lane_index)
             max_longer = sz_max_of_two(max_longer, pairs.longers[lane_index].size());
-        if (scratch_space.size() < match_masks_bytes_k + max_longer * lanes_k) return status_t::bad_alloc_k;
+        if (scratch_space.size() < match_masks_bytes_k + 64 + max_longer * lanes_k * sizeof(u64_t))
+            return status_t::bad_alloc_k;
 
         u64_t *const match_masks = reinterpret_cast<u64_t *>(scratch_space.data()); // ? Indexed `lane * 256 + symbol`.
-        u8_t *const transposed_text = reinterpret_cast<u8_t *>(scratch_space.data() + match_masks_bytes_k);
+        u64_t *const equality_words = reinterpret_cast<u64_t *>( // ? Indexed `position * lanes_k + lane`.
+            (reinterpret_cast<uintptr_t>(scratch_space.data() + match_masks_bytes_k) + 63) & ~(uintptr_t)63);
         alignas(64) u64_t top_bits[lanes_k] = {0}, shorter_lengths[lanes_k] = {0}, longer_lengths[lanes_k] = {0};
-        for (size_t position = 0; position != max_longer * lanes_k; ++position) transposed_text[position] = 0;
 
         for (index_t lane_index = 0; lane_index != pairs.lanes_count(); ++lane_index) {
             index_t const shorter_length = (index_t)pairs.shorters[lane_index].size();
@@ -1771,11 +1776,15 @@ struct levenshtein_distance_within<char, capability_, std::enable_if_t<(capabili
             top_bits[lane_index] = (u64_t)1 << (shorter_length - 1);
             shorter_lengths[lane_index] = shorter_length;
             longer_lengths[lane_index] = longer_length;
+            // Precompute this lane's `Eq` word per text position with scalar table hits, and zero its tail so
+            // positions past the text read as "matches nothing" for the lanes still scanning.
             for (size_t position = 0; position != longer_length; ++position)
-                transposed_text[position * lanes_k + lane_index] = (u8_t)longer[position];
+                equality_words[position * lanes_k + lane_index] =
+                    match_masks[lane_index * 256 + (u8_t)longer[position]];
+            for (size_t position = longer_length; position != max_longer; ++position)
+                equality_words[position * lanes_k + lane_index] = 0;
         }
 
-        __m512i const lane_offsets = _mm512_set_epi64(7 * 256, 6 * 256, 5 * 256, 4 * 256, 3 * 256, 2 * 256, 1 * 256, 0);
         __m512i const one = _mm512_set1_epi64(1);
         __m512i const top_mask = _mm512_load_si512(top_bits), longer_vec = _mm512_load_si512(longer_lengths);
         __m512i const length_vec = _mm512_load_si512(shorter_lengths);
@@ -1792,9 +1801,7 @@ struct levenshtein_distance_within<char, capability_, std::enable_if_t<(capabili
         for (size_t position = 0; position != max_longer; ++position) {
             __mmask8 const live = _mm512_cmpgt_epi64_mask(longer_vec, _mm512_set1_epi64((long long)position));
             __mmask8 const active = (__mmask8)(live & ~dead);
-            __m512i const symbols = _mm512_cvtepu8_epi64(
-                _mm_loadl_epi64((__m128i const *)(transposed_text + position * lanes_k)));
-            __m512i const equality = _mm512_i64gather_epi64(_mm512_add_epi64(lane_offsets, symbols), match_masks, 8);
+            __m512i const equality = _mm512_load_si512(equality_words + position * lanes_k);
             __m512i const carry_in = _mm512_or_si512(equality, vertical_negative);
             // Xh = (((Eq & VP) + VP) ^ VP) | Eq; the trailing `(sum ^ VP) | Eq` folds into one VPTERNLOGQ (0xBE).
             __m512i const sum = _mm512_add_epi64(_mm512_and_si512(equality, vertical_positive), vertical_positive);
@@ -1840,10 +1847,13 @@ struct levenshtein_distance_within<char, capability_, std::enable_if_t<(capabili
      *      The query is the Myers pattern for every lane and each candidate is that lane's text. Unit-cost edit
      *      distance is symmetric, so this is correct even when a candidate is shorter than the query; the prefix
      *      early-exit argument (`D[m][j] - (n - j) > bound` is hopeless) holds for any pattern/text split.
+     *      Like the per-lane variant, the setup precomputes each lane's `Eq` word per candidate position with
+     *      scalar L1 table hits, so the scan streams one aligned 64-byte load per position instead of an
+     *      eight-lane gather per position.
      *
      *      @pre `query.size() <= 64` (single 64-bit Myers integer per lane). No runtime check is performed.
-     *      @p scratch_space holds the single `match_masks[256]` table (256 `u64`) followed by a transposed-text
-     *      buffer of at least `max_candidate_length * 8` bytes.
+     *      @p scratch_space holds the single `match_masks[256]` table (256 `u64`) followed by a 64-byte-aligned
+     *      `Eq` buffer of `max_candidate_length * 8` `u64` words (plus alignment slack).
      */
     template <typename results_writer_>
     status_t within_8x64_shared_query_(span<char_t const> query, span<span<char_t const> const> candidates,
@@ -1854,13 +1864,13 @@ struct levenshtein_distance_within<char, capability_, std::enable_if_t<(capabili
         size_t max_candidate_length = 0;
         for (index_t lane_index = 0; lane_index != candidates.size(); ++lane_index)
             max_candidate_length = sz_max_of_two(max_candidate_length, candidates[lane_index].size());
-        if (scratch_space.size() < shared_match_masks_bytes_k + max_candidate_length * lanes_k)
+        if (scratch_space.size() < shared_match_masks_bytes_k + 64 + max_candidate_length * lanes_k * sizeof(u64_t))
             return status_t::bad_alloc_k;
 
         u64_t *const match_masks = reinterpret_cast<u64_t *>(scratch_space.data()); // ? Indexed by `symbol` alone.
-        u8_t *const transposed_text = reinterpret_cast<u8_t *>(scratch_space.data() + shared_match_masks_bytes_k);
+        u64_t *const equality_words = reinterpret_cast<u64_t *>( // ? Indexed `position * lanes_k + lane`.
+            (reinterpret_cast<uintptr_t>(scratch_space.data() + shared_match_masks_bytes_k) + 63) & ~(uintptr_t)63);
         alignas(64) u64_t top_bits[lanes_k] = {0}, shorter_lengths[lanes_k] = {0}, longer_lengths[lanes_k] = {0};
-        for (size_t position = 0; position != max_candidate_length * lanes_k; ++position) transposed_text[position] = 0;
 
         index_t const query_length = (index_t)query.size();
         char_t const *const query_data = query.data();
@@ -1881,11 +1891,14 @@ struct levenshtein_distance_within<char, capability_, std::enable_if_t<(capabili
             top_bits[lane_index] = (u64_t)1 << (query_length - 1);
             shorter_lengths[lane_index] = query_length;
             longer_lengths[lane_index] = candidate_length;
+            // Precompute this lane's `Eq` word per candidate position with scalar table hits, and zero its
+            // tail so positions past the candidate read as "matches nothing" for the lanes still scanning.
             for (size_t position = 0; position != candidate_length; ++position)
-                transposed_text[position * lanes_k + lane_index] = (u8_t)candidate[position];
+                equality_words[position * lanes_k + lane_index] = match_masks[(u8_t)candidate[position]];
+            for (size_t position = candidate_length; position != max_candidate_length; ++position)
+                equality_words[position * lanes_k + lane_index] = 0;
         }
 
-        __m512i const lane_offsets = _mm512_setzero_si512(); // ? Every lane reads the one shared table at `symbol`.
         __m512i const one = _mm512_set1_epi64(1);
         __m512i const top_mask = _mm512_load_si512(top_bits), longer_vec = _mm512_load_si512(longer_lengths);
         __m512i const length_vec = _mm512_load_si512(shorter_lengths);
@@ -1900,9 +1913,7 @@ struct levenshtein_distance_within<char, capability_, std::enable_if_t<(capabili
         for (size_t position = 0; position != max_candidate_length; ++position) {
             __mmask8 const live = _mm512_cmpgt_epi64_mask(longer_vec, _mm512_set1_epi64((long long)position));
             __mmask8 const active = (__mmask8)(live & ~dead);
-            __m512i const symbols = _mm512_cvtepu8_epi64(
-                _mm_loadl_epi64((__m128i const *)(transposed_text + position * lanes_k)));
-            __m512i const equality = _mm512_i64gather_epi64(_mm512_add_epi64(lane_offsets, symbols), match_masks, 8);
+            __m512i const equality = _mm512_load_si512(equality_words + position * lanes_k);
             __m512i const carry_in = _mm512_or_si512(equality, vertical_negative);
             // Xh = (((Eq & VP) + VP) ^ VP) | Eq; the trailing `(sum ^ VP) | Eq` folds into one VPTERNLOGQ (0xBE).
             __m512i const sum = _mm512_add_epi64(_mm512_and_si512(equality, vertical_positive), vertical_positive);
@@ -3423,7 +3434,10 @@ struct levenshtein_distances_within<allocator_type_, capability_,
             if (to_view(candidates[index]).size() > longest_candidate)
                 longest_candidate = to_view(candidates[index]).size(), longest_candidate_index = index;
         size_t const max_longer = sz_max_of_two(longest_query, longest_candidate);
-        size_t const myers_scratch = myers_t::match_masks_bytes_k + max_longer * (size_t)myers_t::lanes_k;
+        // Single-word within kernels precompute one `Eq` word per text position per lane (plus alignment
+        // slack) instead of re-gathering from the `match_masks` table during the scan.
+        size_t const myers_scratch =
+            myers_t::match_masks_bytes_k + 64 + max_longer * (size_t)myers_t::lanes_k * sizeof(u64_t);
         size_t serial_scratch = 0;
         if (queries.size() && candidates.size())
             serial_scratch = scoring_t {bound_}.scratch_space_needed(
@@ -3488,7 +3502,9 @@ struct levenshtein_distances_within<allocator_type_, capability_,
             // Bounded single-word Myers: query-major group, seeding with this cell and extending over consecutive
             // live cells that share the seed query, pass the length prefilter, and fit one 64-bit Myers word, so the
             // build-once `within_8x64_shared_query_` kernel can pay the `match_masks` build once per query. Per-lane
-            // `top_bits` handle the differing exact lengths inside the group.
+            // `top_bits` handle the differing exact lengths inside the group. Cheap rejects (length difference past
+            // the bound) are zeroed inline without breaking the group, so reject-heavy short-string scans still
+            // launch the kernel at full lane width instead of one pair at a time.
             if (shorter <= 64) {
                 span<char const> group_shorters[myers_t::lanes_k], group_longers[myers_t::lanes_k];
                 span<char const> candidate_views[myers_t::lanes_k]; // ? Candidate view, for the shared-query kernel.
@@ -3503,7 +3519,7 @@ struct levenshtein_distances_within<allocator_type_, capability_,
                 group_destinations[0] = destination_for(query_index, candidate_index);
                 index_t group = 1;
                 ++cell_index;
-                for (; cell_index != cell_end && group != (index_t)myers_t::lanes_k; ++cell_index, ++group) {
+                for (; cell_index != cell_end && group != (index_t)myers_t::lanes_k; ++cell_index) {
                     size_t next_query_index = 0, next_candidate_index = 0;
                     cross_cell_to_indices_(cell_index, candidates_count, cross_kind, next_query_index,
                                            next_candidate_index);
@@ -3512,13 +3528,22 @@ struct levenshtein_distances_within<allocator_type_, capability_,
                     auto const next_candidate = to_view(candidates[next_candidate_index]);
                     size_t const next_shorter = sz_min_of_two(next_query.size(), next_candidate.size());
                     size_t const next_longer = sz_max_of_two(next_query.size(), next_candidate.size());
-                    if (next_shorter == 0 || next_shorter > 64 || next_longer - next_shorter > bound_) break;
+                    // Structural breaks only: empty sides and past-64 cells need their own paths.
+                    if (next_shorter == 0 || next_shorter > 64) break;
+                    // Cheap rejects ride along without consuming a lane.
+                    if (next_longer - next_shorter > bound_) {
+                        cross_cell_destination_t<value_t> const next_destination =
+                            destination_for(next_query_index, next_candidate_index);
+                        cross_cell_writer_t<value_t> {&next_destination}[0] = 0;
+                        continue;
+                    }
                     bool const next_query_shorter = next_query.size() <= next_candidate.size();
                     group_shorters[group] = next_query_shorter ? next_query : next_candidate;
                     group_longers[group] = next_query_shorter ? next_candidate : next_query;
                     candidate_views[group] = next_candidate;
                     group_positions[group] = group;
                     group_destinations[group] = destination_for(next_query_index, next_candidate_index);
+                    ++group;
                 }
 
                 writer.destinations = group_destinations;
