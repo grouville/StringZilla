@@ -63,6 +63,21 @@ def test_levenshtein_index_keeps_dictionary_ids():
         szs.LevenshteinIndex([b"valid", object()])
 
 
+def test_levenshtein_index_separates_byte_and_unicode_distance():
+    words = ["café", "cafe", "咖啡", "咖非", "café"]
+    byte_index = szs.LevenshteinIndex(words, max_distance=2)
+    unicode_index = szs.LevenshteinIndexUTF8(Strs(words), max_distance=2)
+
+    assert sorted(byte_index("cafe", bound=1)) == [(1, 0)]
+    assert sorted(unicode_index("cafe", bound=1)) == [(0, 1), (1, 0), (4, 1)]
+    assert sorted(unicode_index("咖啡", bound=1)) == [(2, 0), (3, 1)]
+
+    with pytest.raises(ValueError):
+        unicode_index(b"\xf0\x9f", bound=1)
+    with pytest.raises(ValueError):
+        szs.LevenshteinIndexUTF8([b"valid", b"\xf0\x9f"])
+
+
 def test_device_scope():
     """`DeviceScope` accepts a default scope, `cpu_cores` in {0, 1, N}, and `gpu_device` where CUDA
     is available, and rejects non-numeric arguments and specifying both at once."""

@@ -10,16 +10,23 @@ typedef struct {
     szs_levenshtein_index_t handle;
     szs_levenshtein_index_search_t search;
     sz_size_t max_distance;
+    int utf8;
     SZS_LOCK_FIELD_
 } LevenshteinIndex;
 
 static void LevenshteinIndex_dealloc(LevenshteinIndex *self) {
     if (self->search) {
-        szs_levenshtein_index_search_free(self->search);
+        if (self->utf8)
+            szs_levenshtein_index_utf8_search_free(self->search);
+        else
+            szs_levenshtein_index_search_free(self->search);
         self->search = NULL;
     }
     if (self->handle) {
-        szs_levenshtein_index_free(self->handle);
+        if (self->utf8)
+            szs_levenshtein_index_utf8_free(self->handle);
+        else
+            szs_levenshtein_index_free(self->handle);
         self->handle = NULL;
     }
     Py_TYPE(self)->tp_free((PyObject *)self);
@@ -31,6 +38,7 @@ static PyObject *LevenshteinIndex_new(PyTypeObject *type, PyObject *args, PyObje
         self->handle = NULL;
         self->search = NULL;
         self->max_distance = 0;
+        self->utf8 = type == &LevenshteinIndexUTF8Type;
     }
     return (PyObject *)self;
 }
@@ -64,15 +72,23 @@ static int LevenshteinIndex_init(LevenshteinIndex *self, PyObject *args, PyObjec
     sz_sequence_t dictionary_sequence;
     if (sz_py_export_strings_as_u32tape(dictionary_obj, &dictionary_u32tape.data, &dictionary_u32tape.offsets,
                                         &dictionary_u32tape.count))
-        status = szs_levenshtein_index_init_u32tape(&dictionary_u32tape, max_distance, deletion_max_length,
-                                                     NULL, &self->handle, &error_detail);
+        status = self->utf8
+                     ? szs_levenshtein_index_utf8_init_u32tape(&dictionary_u32tape, max_distance,
+                                                               deletion_max_length, NULL, &self->handle, &error_detail)
+                     : szs_levenshtein_index_init_u32tape(&dictionary_u32tape, max_distance, deletion_max_length,
+                                                         NULL, &self->handle, &error_detail);
     else if (sz_py_export_strings_as_u64tape(dictionary_obj, &dictionary_u64tape.data, &dictionary_u64tape.offsets,
                                              &dictionary_u64tape.count))
-        status = szs_levenshtein_index_init_u64tape(&dictionary_u64tape, max_distance, deletion_max_length,
-                                                     NULL, &self->handle, &error_detail);
+        status = self->utf8
+                     ? szs_levenshtein_index_utf8_init_u64tape(&dictionary_u64tape, max_distance,
+                                                               deletion_max_length, NULL, &self->handle, &error_detail)
+                     : szs_levenshtein_index_init_u64tape(&dictionary_u64tape, max_distance, deletion_max_length,
+                                                         NULL, &self->handle, &error_detail);
     else if (sz_py_export_strings_as_sequence(dictionary_obj, &dictionary_sequence))
-        status = szs_levenshtein_index_init(&dictionary_sequence, max_distance, deletion_max_length,
-                                             NULL, &self->handle, &error_detail);
+        status = self->utf8 ? szs_levenshtein_index_utf8_init(&dictionary_sequence, max_distance,
+                                                              deletion_max_length, NULL, &self->handle, &error_detail)
+                            : szs_levenshtein_index_init(&dictionary_sequence, max_distance, deletion_max_length,
+                                                        NULL, &self->handle, &error_detail);
     else {
         PyObject *items = PySequence_Fast(dictionary_obj, "dictionary must be an iterable of string-like objects");
         if (!items) return -1;
@@ -96,8 +112,10 @@ static int LevenshteinIndex_init(LevenshteinIndex *self, PyObject *args, PyObjec
                 return -1;
             }
         sz_sequence_from_string_views(views, (sz_size_t)count, &dictionary_sequence);
-        status = szs_levenshtein_index_init(&dictionary_sequence, max_distance, deletion_max_length,
-                                             NULL, &self->handle, &error_detail);
+        status = self->utf8 ? szs_levenshtein_index_utf8_init(&dictionary_sequence, max_distance,
+                                                              deletion_max_length, NULL, &self->handle, &error_detail)
+                            : szs_levenshtein_index_init(&dictionary_sequence, max_distance, deletion_max_length,
+                                                        NULL, &self->handle, &error_detail);
         PyMem_Free(views);
         Py_DECREF(items);
     }
@@ -105,9 +123,13 @@ static int LevenshteinIndex_init(LevenshteinIndex *self, PyObject *args, PyObjec
         set_stringzilla_error(status, error_detail, "LevenshteinIndex construction");
         return -1;
     }
-    status = szs_levenshtein_index_search_init(self->handle, &self->search, &error_detail);
+    status = self->utf8 ? szs_levenshtein_index_utf8_search_init(self->handle, &self->search, &error_detail)
+                        : szs_levenshtein_index_search_init(self->handle, &self->search, &error_detail);
     if (status != sz_success_k) {
-        szs_levenshtein_index_free(self->handle);
+        if (self->utf8)
+            szs_levenshtein_index_utf8_free(self->handle);
+        else
+            szs_levenshtein_index_free(self->handle);
         self->handle = NULL;
         set_stringzilla_error(status, error_detail, "LevenshteinIndex search-state construction");
         return -1;
@@ -117,7 +139,8 @@ static int LevenshteinIndex_init(LevenshteinIndex *self, PyObject *args, PyObjec
 }
 
 static PyObject *LevenshteinIndex_repr(LevenshteinIndex *self) {
-    return PyUnicode_FromFormat("LevenshteinIndex(max_distance=%zu)", self->max_distance);
+    return PyUnicode_FromFormat("%s(max_distance=%zu)", self->utf8 ? "LevenshteinIndexUTF8" : "LevenshteinIndex",
+                                self->max_distance);
 }
 
 static PyObject *LevenshteinIndex_call(LevenshteinIndex *self, PyObject *args, PyObject *kwargs) {
@@ -142,8 +165,11 @@ static PyObject *LevenshteinIndex_call(LevenshteinIndex *self, PyObject *args, P
     sz_status_t status;
     SZS_LOCK_(&self->lock);
     Py_BEGIN_ALLOW_THREADS
-    status = szs_levenshtein_index_find(self->handle, self->search, query, query_length, bound, &matches,
-                                         &matches_count, &error_detail);
+    status = self->utf8
+                 ? szs_levenshtein_index_utf8_find(self->handle, self->search, query, query_length, bound, &matches,
+                                                   &matches_count, &error_detail)
+                 : szs_levenshtein_index_find(self->handle, self->search, query, query_length, bound, &matches,
+                                              &matches_count, &error_detail);
     Py_END_ALLOW_THREADS
     if (status != sz_success_k) {
         SZS_UNLOCK_(&self->lock);
@@ -199,3 +225,19 @@ PyTypeObject LevenshteinIndexType = {
     .tp_repr = (reprfunc)LevenshteinIndex_repr,
 };
 
+static char const doc_LevenshteinIndexUTF8[] =
+    "LevenshteinIndexUTF8(dictionary, max_distance=2, deletion_max_word_length=None)\n\n"
+    "Build an exact Unicode dictionary index from valid UTF-8. Calling the object with ``(query, bound=None)`` "
+    "returns an unordered list of ``(dictionary_id, distance)`` pairs.";
+
+PyTypeObject LevenshteinIndexUTF8Type = {
+    PyVarObject_HEAD_INIT(NULL, 0).tp_name = "stringzillas.LevenshteinIndexUTF8",
+    .tp_doc = doc_LevenshteinIndexUTF8,
+    .tp_basicsize = sizeof(LevenshteinIndex),
+    .tp_flags = Py_TPFLAGS_DEFAULT,
+    .tp_new = LevenshteinIndex_new,
+    .tp_init = (initproc)LevenshteinIndex_init,
+    .tp_dealloc = (destructor)LevenshteinIndex_dealloc,
+    .tp_call = (ternaryfunc)LevenshteinIndex_call,
+    .tp_repr = (reprfunc)LevenshteinIndex_repr,
+};

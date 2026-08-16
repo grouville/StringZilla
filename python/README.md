@@ -519,6 +519,13 @@ index = szs.LevenshteinIndex([b"book", b"back", b"book", b"boon"], max_distance=
 assert sorted(index(b"cook", bound=1)) == [(0, 1), (2, 1)]
 ```
 
+`LevenshteinIndex` compares bytes. Use `LevenshteinIndexUTF8` to validate UTF-8 and count edits in Unicode codepoints.
+
+```python
+index = szs.LevenshteinIndexUTF8(["café", "cafe", "咖啡", "咖非"], max_distance=2)
+assert sorted(index("咖啡", bound=1)) == [(2, 0), (3, 1)]
+```
+
 ### `NeedlemanWunschScores` and `SmithWatermanScores`
 
 `NeedlemanWunschScores(byte_to_class, class_substitution_costs, open=-1, extend=-1, capabilities=None)` computes global alignment scores.
