@@ -192,6 +192,34 @@ void run(void) {
 }
 ```
 
+### Reusing a dictionary for fuzzy search
+
+When the same dictionary is searched many times, build the index once and reuse it. Each result contains the original
+dictionary ID and its exact Levenshtein distance. Duplicate strings keep separate IDs.
+
+```c
+char const tape[] = "bookbackbookboon";
+sz_u32_t const offsets[] = {0, 4, 8, 12, 16};
+sz_sequence_u32tape_t dictionary = {tape, offsets, 4};
+char const *error = NULL;
+szs_levenshtein_index_t index = NULL;
+szs_levenshtein_index_search_t search = NULL;
+
+assert(szs_levenshtein_index_init_u32tape(&dictionary, 2, SZ_SIZE_MAX, NULL, &index, &error) == sz_success_k);
+assert(szs_levenshtein_index_search_init(index, &search, &error) == sz_success_k);
+
+szs_levenshtein_index_match_t const *matches = NULL;
+sz_size_t count = 0;
+assert(szs_levenshtein_index_find(index, search, "cook", 4, 1, &matches, &count, &error) == sz_success_k);
+assert(count == 2);
+
+szs_levenshtein_index_search_free(search);
+szs_levenshtein_index_free(index);
+```
+
+The names above compare bytes. Use the `szs_levenshtein_index_utf8_*` names when edits should be counted as Unicode
+characters. One index can be shared across threads, but each thread needs its own search handle.
+
 ## Alignment Scores
 
 For sequence alignment the engines maximize a __signed__ similarity score, written into an `sz_ssize_t` matrix.
