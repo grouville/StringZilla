@@ -40,5 +40,30 @@ int main(void) {
     szs_levenshtein_index_search_free(search);
     szs_levenshtein_index_free(index);
 
+    char const utf8_dictionary_data[] = "caf\xC3\xA9" "cafe" "\xE5\x92\x96\xE5\x95\xA1"
+                                        "\xE5\x92\x96\xE9\x9D\x9E";
+    sz_u32_t const utf8_dictionary_offsets[] = {0, 5, 9, 15, 21};
+    sz_sequence_u32tape_t utf8_dictionary = {utf8_dictionary_data, utf8_dictionary_offsets, 4};
+    szs_levenshtein_index_utf8_t utf8_index = NULL;
+    if (szs_levenshtein_index_utf8_init_u32tape(&utf8_dictionary, 2, SZ_SIZE_MAX, NULL, &utf8_index,
+                                                &error_message) != sz_success_k)
+        return 9;
+    szs_levenshtein_index_utf8_search_t utf8_search = NULL;
+    if (szs_levenshtein_index_utf8_search_init(utf8_index, &utf8_search, &error_message) != sz_success_k)
+        return 10;
+    char const coffee[] = "\xE5\x92\x96\xE5\x95\xA1";
+    if (szs_levenshtein_index_utf8_find(utf8_index, utf8_search, coffee, 6, 1, &matches, &matches_count,
+                                        &error_message) != sz_success_k)
+        return 11;
+    if (matches_count != 2 || matches[0].id != 2 || matches[0].distance != 0 || matches[1].id != 3 ||
+        matches[1].distance != 1)
+        return 12;
+    if (szs_levenshtein_index_utf8_find(utf8_index, utf8_search, "\xF0\x9F", 2, 1, &matches, &matches_count,
+                                        &error_message) != sz_invalid_utf8_k)
+        return 13;
+    if (matches != NULL || matches_count != 0) return 14;
+    szs_levenshtein_index_utf8_search_free(utf8_search);
+    szs_levenshtein_index_utf8_free(utf8_index);
+
     return 0;
 }

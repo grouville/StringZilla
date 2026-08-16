@@ -217,7 +217,8 @@ szs_levenshtein_index_search_free(search);
 szs_levenshtein_index_free(index);
 ```
 
-One index can be shared across threads, but each thread needs its own search handle.
+The names above compare bytes. Use the `szs_levenshtein_index_utf8_*` names when edits should be counted as Unicode
+characters. One index can be shared across threads, but each thread needs its own search handle.
 
 ## Alignment Scores
 
