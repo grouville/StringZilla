@@ -49,6 +49,20 @@ def test_library_properties():
     sz.reset_capabilities(szs.__capabilities__)  # Should not raise
 
 
+def test_levenshtein_index_keeps_dictionary_ids():
+    words = [b"book", b"back", b"book", b"boon"]
+    index = szs.LevenshteinIndex(words, max_distance=2)
+
+    assert repr(index) == "LevenshteinIndex(max_distance=2)"
+    assert sorted(index(b"cook", bound=1)) == [(0, 1), (2, 1)]
+    assert sorted(index(b"book", bound=0)) == [(0, 0), (2, 0)]
+
+    with pytest.raises(ValueError):
+        index(b"book", bound=3)
+    with pytest.raises(TypeError):
+        szs.LevenshteinIndex([b"valid", object()])
+
+
 def test_device_scope():
     """`DeviceScope` accepts a default scope, `cpu_cores` in {0, 1, N}, and `gpu_device` where CUDA
     is available, and rejects non-numeric arguments and specifying both at once."""

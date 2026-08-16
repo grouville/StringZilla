@@ -508,6 +508,17 @@ utf8_engine = szs.LevenshteinDistancesUTF8(mismatch=5)
 utf8_engine(sz.Strs(["café", "naïve"]), sz.Strs(["caffe", "naive"]))
 ```
 
+### Reusing a dictionary for fuzzy search
+
+Use `LevenshteinIndex` when the same byte dictionary will be searched many times. The dictionary is copied when the
+index is built. Each search returns every matching `(dictionary_id, distance)` pair, and duplicate values keep
+separate IDs.
+
+```python
+index = szs.LevenshteinIndex([b"book", b"back", b"book", b"boon"], max_distance=2)
+assert sorted(index(b"cook", bound=1)) == [(0, 1), (2, 1)]
+```
+
 ### `NeedlemanWunschScores` and `SmithWatermanScores`
 
 `NeedlemanWunschScores(byte_to_class, class_substitution_costs, open=-1, extend=-1, capabilities=None)` computes global alignment scores.
