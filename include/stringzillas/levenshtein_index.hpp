@@ -293,184 +293,193 @@ class basic_levenshtein_index {
         return status_t::success_k;
     }
 
-    template <typename scratch_type_>
-    status_t find_dense_(span<symbol_t const> query, u8_t bound, scratch_type_ &scratch,
-                         vector_t<match_t> &matches) const noexcept {
-        // Myers' bit vectors compare one query against the owned dictionary. Match masks belong to the query, so build
-        // them once here instead of once per pair. A dense 256-row table serves bytes; wider symbols use sorted sparse
-        // rows. Queries through 64 symbols keep their one-word masks on the stack. Longer queries carry the recurrence
-        // across reusable 64-bit blocks in scratch.
-        struct equality_entry_t {
-            symbol_t symbol;
-            u64_t mask;
-        };
+    struct dense_equality_entry_t {
+        symbol_t symbol;
+        u64_t mask;
+    };
+    struct dense_query_t {
         u64_t equality_dense[256] = {};
-        equality_entry_t equality_sparse[64];
+        dense_equality_entry_t equality_sparse[64];
         size_t equality_sparse_count = 0;
-        size_t const words_count = query.size() / 64 + (query.size() % 64 != 0);
+        size_t words_count = 0;
+    };
+
+    template <typename scratch_type_>
+    static status_t prepare_dense_query_(span<symbol_t const> query, scratch_type_ &scratch,
+                                         dense_query_t &state) noexcept {
+        state.words_count = query.size() / 64 + (query.size() % 64 != 0);
         if (query.size() <= 64) {
             if constexpr (sizeof(symbol_t) == 1)
                 for (size_t index = 0; index != query.size(); ++index)
-                    equality_dense[static_cast<u8_t>(query[index])] |= u64_t(1) << index;
+                    state.equality_dense[static_cast<u8_t>(query[index])] |= u64_t(1) << index;
             else {
                 for (size_t index = 0; index != query.size(); ++index)
-                    equality_sparse[index] = equality_entry_t {query[index], u64_t(1) << index};
-                std::sort(equality_sparse, equality_sparse + query.size(), [](auto const &first, auto const &second) {
-                    return first.symbol < second.symbol;
-                });
+                    state.equality_sparse[index] = dense_equality_entry_t {query[index], u64_t(1) << index};
+                std::sort(state.equality_sparse, state.equality_sparse + query.size(),
+                          [](auto const &first, auto const &second) { return first.symbol < second.symbol; });
                 for (size_t index = 0; index != query.size(); ++index) {
-                    if (equality_sparse_count &&
-                        equality_sparse[equality_sparse_count - 1].symbol == equality_sparse[index].symbol)
-                        equality_sparse[equality_sparse_count - 1].mask |= equality_sparse[index].mask;
+                    if (state.equality_sparse_count &&
+                        state.equality_sparse[state.equality_sparse_count - 1].symbol ==
+                            state.equality_sparse[index].symbol)
+                        state.equality_sparse[state.equality_sparse_count - 1].mask |=
+                            state.equality_sparse[index].mask;
                     else
-                        equality_sparse[equality_sparse_count++] = equality_sparse[index];
+                        state.equality_sparse[state.equality_sparse_count++] = state.equality_sparse[index];
                 }
             }
+            return status_t::success_k;
+        }
+
+        if constexpr (sizeof(symbol_t) == 1) {
+            if (state.words_count > std::numeric_limits<size_t>::max() / 256)
+                return status_t::overflow_risk_k;
+            if (status_t status = scratch.dense_match_masks.try_resize(state.words_count * 256);
+                status != status_t::success_k)
+                return status;
+            std::fill(scratch.dense_match_masks.begin(), scratch.dense_match_masks.end(), u64_t(0));
+            for (size_t index = 0; index != query.size(); ++index)
+                scratch.dense_match_masks[static_cast<u8_t>(query[index]) * state.words_count + index / 64] |=
+                    u64_t(1) << (index % 64);
         }
         else {
-            if constexpr (sizeof(symbol_t) == 1) {
-                if (words_count > std::numeric_limits<size_t>::max() / 256)
-                    return status_t::overflow_risk_k;
-                if (status_t status = scratch.dense_match_masks.try_resize(words_count * 256);
-                    status != status_t::success_k)
-                    return status;
-                std::fill(scratch.dense_match_masks.begin(), scratch.dense_match_masks.end(), u64_t(0));
-                for (size_t index = 0; index != query.size(); ++index)
-                    scratch.dense_match_masks[static_cast<u8_t>(query[index]) * words_count + index / 64] |=
-                        u64_t(1) << (index % 64);
+            if (status_t status = scratch.dense_symbols.try_resize(query.size()); status != status_t::success_k)
+                return status;
+            std::copy(query.begin(), query.end(), scratch.dense_symbols.begin());
+            std::sort(scratch.dense_symbols.begin(), scratch.dense_symbols.end());
+            auto const unique_end = std::unique(scratch.dense_symbols.begin(), scratch.dense_symbols.end());
+            if (status_t status = scratch.dense_symbols.try_resize(
+                    static_cast<size_t>(unique_end - scratch.dense_symbols.begin()));
+                status != status_t::success_k)
+                return status;
+            if (scratch.dense_symbols.size() > std::numeric_limits<size_t>::max() / state.words_count)
+                return status_t::overflow_risk_k;
+            if (status_t status =
+                    scratch.dense_match_masks.try_resize(scratch.dense_symbols.size() * state.words_count);
+                status != status_t::success_k)
+                return status;
+            std::fill(scratch.dense_match_masks.begin(), scratch.dense_match_masks.end(), u64_t(0));
+            for (size_t index = 0; index != query.size(); ++index) {
+                symbol_t const *symbol =
+                    std::lower_bound(scratch.dense_symbols.begin(), scratch.dense_symbols.end(), query[index]);
+                size_t const symbol_index = static_cast<size_t>(symbol - scratch.dense_symbols.begin());
+                scratch.dense_match_masks[symbol_index * state.words_count + index / 64] |=
+                    u64_t(1) << (index % 64);
             }
-            else {
-                if (status_t status = scratch.dense_symbols.try_resize(query.size()); status != status_t::success_k)
-                    return status;
-                std::copy(query.begin(), query.end(), scratch.dense_symbols.begin());
-                std::sort(scratch.dense_symbols.begin(), scratch.dense_symbols.end());
-                auto const unique_end = std::unique(scratch.dense_symbols.begin(), scratch.dense_symbols.end());
-                if (status_t status = scratch.dense_symbols.try_resize(
-                        static_cast<size_t>(unique_end - scratch.dense_symbols.begin()));
-                    status != status_t::success_k)
-                    return status;
-                if (scratch.dense_symbols.size() > std::numeric_limits<size_t>::max() / words_count)
-                    return status_t::overflow_risk_k;
-                if (status_t status =
-                        scratch.dense_match_masks.try_resize(scratch.dense_symbols.size() * words_count);
-                    status != status_t::success_k)
-                    return status;
-                std::fill(scratch.dense_match_masks.begin(), scratch.dense_match_masks.end(), u64_t(0));
-                for (size_t index = 0; index != query.size(); ++index) {
-                    symbol_t const *symbol = std::lower_bound(scratch.dense_symbols.begin(),
-                                                              scratch.dense_symbols.end(), query[index]);
-                    size_t const symbol_index = static_cast<size_t>(symbol - scratch.dense_symbols.begin());
-                    scratch.dense_match_masks[symbol_index * words_count + index / 64] |=
-                        u64_t(1) << (index % 64);
+        }
+        if (status_t status = scratch.dense_positive.try_resize(state.words_count); status != status_t::success_k)
+            return status;
+        return scratch.dense_negative.try_resize(state.words_count);
+    }
+
+    template <typename scratch_type_>
+    static void distance_dense_(span<symbol_t const> query, span<symbol_t const> candidate, size_t cutoff,
+                                dense_query_t const &state, scratch_type_ &scratch, size_t &distance,
+                                bool &rejected) noexcept {
+        rejected = false;
+        if (query.empty()) {
+            distance = candidate.size();
+            return;
+        }
+        distance = query.size();
+        if (query.size() <= 64) {
+            u64_t positive = ~u64_t(0), negative = 0;
+            u64_t const top = u64_t(1) << (query.size() - 1);
+            for (size_t index = 0; index != candidate.size(); ++index) {
+                u64_t matches_mask = 0;
+                if constexpr (sizeof(symbol_t) == 1)
+                    matches_mask = state.equality_dense[static_cast<u8_t>(candidate[index])];
+                else {
+                    dense_equality_entry_t const *entry = std::lower_bound(
+                        state.equality_sparse, state.equality_sparse + state.equality_sparse_count, candidate[index],
+                        [](dense_equality_entry_t const &entry, symbol_t symbol) { return entry.symbol < symbol; });
+                    if (entry != state.equality_sparse + state.equality_sparse_count &&
+                        entry->symbol == candidate[index])
+                        matches_mask = entry->mask;
+                }
+                u64_t const carry_in = matches_mask | negative;
+                u64_t const differences = (((carry_in & positive) + positive) ^ positive) | carry_in;
+                u64_t const horizontal_positive = negative | ~(differences | positive);
+                u64_t const horizontal_negative = positive & differences;
+                distance += (horizontal_positive & top) != 0;
+                distance -= (horizontal_negative & top) != 0;
+                u64_t const shifted_positive = (horizontal_positive << 1) | 1;
+                u64_t const shifted_negative = horizontal_negative << 1;
+                positive = shifted_negative | ~(differences | shifted_positive);
+                negative = shifted_positive & differences;
+                if (cutoff != std::numeric_limits<size_t>::max() &&
+                    distance > cutoff + candidate.size() - index - 1) {
+                    rejected = true;
+                    return;
                 }
             }
-            if (status_t status = scratch.dense_positive.try_resize(words_count); status != status_t::success_k)
-                return status;
-            if (status_t status = scratch.dense_negative.try_resize(words_count); status != status_t::success_k)
-                return status;
+            return;
         }
+
+        std::fill(scratch.dense_positive.begin(), scratch.dense_positive.end(), ~u64_t(0));
+        std::fill(scratch.dense_negative.begin(), scratch.dense_negative.end(), u64_t(0));
+        size_t const last_word = (query.size() - 1) / 64;
+        size_t const last_bit = (query.size() - 1) % 64;
+        for (size_t index = 0; index != candidate.size(); ++index) {
+            u64_t const *matches_row = nullptr;
+            if constexpr (sizeof(symbol_t) == 1)
+                matches_row = scratch.dense_match_masks.data() +
+                              static_cast<u8_t>(candidate[index]) * state.words_count;
+            else {
+                symbol_t const *symbol =
+                    std::lower_bound(scratch.dense_symbols.begin(), scratch.dense_symbols.end(), candidate[index]);
+                if (symbol != scratch.dense_symbols.end() && *symbol == candidate[index])
+                    matches_row = scratch.dense_match_masks.data() +
+                                  static_cast<size_t>(symbol - scratch.dense_symbols.begin()) * state.words_count;
+            }
+            u64_t positive_carry = 1, negative_carry = 0;
+            for (size_t word = 0; word != state.words_count; ++word) {
+                u64_t const pattern_matches = matches_row ? matches_row[word] : 0;
+                u64_t const vertical_carry = pattern_matches | scratch.dense_negative[word];
+                u64_t const matched_with_carry = pattern_matches | negative_carry;
+                u64_t const diagonal_zero = (((matched_with_carry & scratch.dense_positive[word]) +
+                                               scratch.dense_positive[word]) ^
+                                              scratch.dense_positive[word]) |
+                                             matched_with_carry;
+                u64_t horizontal_positive =
+                    scratch.dense_negative[word] | ~(diagonal_zero | scratch.dense_positive[word]);
+                u64_t horizontal_negative = scratch.dense_positive[word] & diagonal_zero;
+                if (word == last_word) {
+                    distance += (horizontal_positive >> last_bit) & 1;
+                    distance -= (horizontal_negative >> last_bit) & 1;
+                }
+                u64_t const next_positive_carry = horizontal_positive >> 63;
+                u64_t const next_negative_carry = horizontal_negative >> 63;
+                horizontal_positive = (horizontal_positive << 1) | positive_carry;
+                horizontal_negative = (horizontal_negative << 1) | negative_carry;
+                positive_carry = next_positive_carry;
+                negative_carry = next_negative_carry;
+                scratch.dense_positive[word] = horizontal_negative | ~(vertical_carry | horizontal_positive);
+                scratch.dense_negative[word] = horizontal_positive & vertical_carry;
+            }
+            if (cutoff != std::numeric_limits<size_t>::max() &&
+                distance > cutoff + candidate.size() - index - 1) {
+                rejected = true;
+                return;
+            }
+        }
+    }
+
+    template <typename scratch_type_>
+    status_t find_dense_(span<symbol_t const> query, u8_t bound, scratch_type_ &scratch,
+                         vector_t<match_t> &matches) const noexcept {
+        dense_query_t state;
+        if (status_t status = prepare_dense_query_(query, scratch, state); status != status_t::success_k) return status;
         for (u32_t id = 0; id != size(); ++id) {
-            u8_t distance = bound == std::numeric_limits<u8_t>::max() ? bound : static_cast<u8_t>(bound + 1);
             span<symbol_t const> const candidate = word_(id);
             size_t const length_difference = query.size() > candidate.size() ? query.size() - candidate.size()
                                                                             : candidate.size() - query.size();
-            if (length_difference <= bound) {
-                if (query.size() <= 64) {
-                    if (query.empty()) distance = static_cast<u8_t>(candidate.size());
-                    else {
-                        u64_t positive = ~u64_t(0), negative = 0;
-                        u64_t const top = u64_t(1) << (query.size() - 1);
-                        size_t score = query.size();
-                        bool rejected = false;
-                        for (size_t index = 0; index != candidate.size(); ++index) {
-                            u64_t matches_mask = 0;
-                            if constexpr (sizeof(symbol_t) == 1)
-                                matches_mask = equality_dense[static_cast<u8_t>(candidate[index])];
-                            else {
-                                equality_entry_t const *entry = std::lower_bound(
-                                    equality_sparse, equality_sparse + equality_sparse_count, candidate[index],
-                                    [](equality_entry_t const &entry, symbol_t symbol) {
-                                        return entry.symbol < symbol;
-                                    });
-                                if (entry != equality_sparse + equality_sparse_count &&
-                                    entry->symbol == candidate[index])
-                                    matches_mask = entry->mask;
-                            }
-                            u64_t const carry_in = matches_mask | negative;
-                            u64_t const differences = (((carry_in & positive) + positive) ^ positive) | carry_in;
-                            u64_t const horizontal_positive = negative | ~(differences | positive);
-                            u64_t const horizontal_negative = positive & differences;
-                            score += (horizontal_positive & top) != 0;
-                            score -= (horizontal_negative & top) != 0;
-                            u64_t const shifted_positive = (horizontal_positive << 1) | 1;
-                            u64_t const shifted_negative = horizontal_negative << 1;
-                            positive = shifted_negative | ~(differences | shifted_positive);
-                            negative = shifted_positive & differences;
-                            if (score > size_t(bound) + candidate.size() - index - 1) {
-                                rejected = true;
-                                break;
-                            }
-                        }
-                        if (!rejected && score <= bound) distance = static_cast<u8_t>(score);
-                    }
-                }
-                else {
-                    // Horizontal carries connect adjacent 64-symbol blocks. Only the block containing the final query
-                    // symbol changes the exact score, while the remaining blocks preserve the DP frontier.
-                    std::fill(scratch.dense_positive.begin(), scratch.dense_positive.end(), ~u64_t(0));
-                    std::fill(scratch.dense_negative.begin(), scratch.dense_negative.end(), u64_t(0));
-                    size_t const last_word = (query.size() - 1) / 64;
-                    size_t const last_bit = (query.size() - 1) % 64;
-                    size_t score = query.size();
-                    bool rejected = false;
-                    for (size_t index = 0; index != candidate.size(); ++index) {
-                        u64_t const *matches_row = nullptr;
-                        if constexpr (sizeof(symbol_t) == 1)
-                            matches_row = scratch.dense_match_masks.data() +
-                                          static_cast<u8_t>(candidate[index]) * words_count;
-                        else {
-                            symbol_t const *symbol = std::lower_bound(scratch.dense_symbols.begin(),
-                                                                      scratch.dense_symbols.end(), candidate[index]);
-                            if (symbol != scratch.dense_symbols.end() && *symbol == candidate[index])
-                                matches_row = scratch.dense_match_masks.data() +
-                                              static_cast<size_t>(symbol - scratch.dense_symbols.begin()) * words_count;
-                        }
-                        u64_t positive_carry = 1, negative_carry = 0;
-                        for (size_t word = 0; word != words_count; ++word) {
-                            u64_t const pattern_matches = matches_row ? matches_row[word] : 0;
-                            u64_t const vertical_carry = pattern_matches | scratch.dense_negative[word];
-                            u64_t const matched_with_carry = pattern_matches | negative_carry;
-                            u64_t const diagonal_zero =
-                                (((matched_with_carry & scratch.dense_positive[word]) +
-                                  scratch.dense_positive[word]) ^
-                                 scratch.dense_positive[word]) |
-                                matched_with_carry;
-                            u64_t horizontal_positive =
-                                scratch.dense_negative[word] | ~(diagonal_zero | scratch.dense_positive[word]);
-                            u64_t horizontal_negative = scratch.dense_positive[word] & diagonal_zero;
-                            if (word == last_word) {
-                                score += (horizontal_positive >> last_bit) & 1;
-                                score -= (horizontal_negative >> last_bit) & 1;
-                            }
-                            u64_t const next_positive_carry = horizontal_positive >> 63;
-                            u64_t const next_negative_carry = horizontal_negative >> 63;
-                            horizontal_positive = (horizontal_positive << 1) | positive_carry;
-                            horizontal_negative = (horizontal_negative << 1) | negative_carry;
-                            positive_carry = next_positive_carry;
-                            negative_carry = next_negative_carry;
-                            scratch.dense_positive[word] = horizontal_negative | ~(vertical_carry | horizontal_positive);
-                            scratch.dense_negative[word] = horizontal_positive & vertical_carry;
-                        }
-                        if (score > size_t(bound) + candidate.size() - index - 1) {
-                            rejected = true;
-                            break;
-                        }
-                    }
-                    if (!rejected && score <= bound) distance = static_cast<u8_t>(score);
-                }
-            }
-            if (distance <= bound)
-                if (status_t status = matches.try_push_back(match_t {id, distance}); status != status_t::success_k)
+            if (length_difference > bound) continue;
+            size_t distance = 0;
+            bool rejected = false;
+            distance_dense_(query, candidate, bound, state, scratch, distance, rejected);
+            if (!rejected && distance <= bound)
+                if (status_t status = matches.try_push_back(match_t {id, static_cast<u8_t>(distance)});
+                    status != status_t::success_k)
                     return status;
         }
         return status_t::success_k;
