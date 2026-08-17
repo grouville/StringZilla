@@ -19,6 +19,10 @@ typedef sz_status_t (*levenshtein_index_find_kernel_t)( //
     void *, szs_device_scope_t, void const *, sz_size_t, //
     sz_u64_t *, sz_u32_t *, sz_u8_t *, sz_size_t, sz_size_t *, char const **);
 
+typedef sz_status_t (*levenshtein_index_nearest_kernel_t)( //
+    void *, szs_device_scope_t, void const *, sz_size_t,    //
+    sz_u32_t *, sz_size_t *, sz_size_t, sz_size_t *, char const **);
+
 typedef struct {
     PyObject *items;
     sz_string_view_t *views;
@@ -383,6 +387,156 @@ cleanup:
     return NULL;
 }
 
+static int parse_levenshtein_index_nearest_args(                         //
+    PyObject *const *args, Py_ssize_t positional_count, PyObject *kwnames, //
+    PyObject **queries_out, PyObject **count_out, PyObject **device_out) {
+    if (positional_count > 3) {
+        PyErr_Format(PyExc_TypeError, "LevenshteinIndex.nearest() takes at most 3 positional arguments, got %zd",
+                     positional_count);
+        return -1;
+    }
+    PyObject *queries = positional_count > 0 ? args[0] : NULL;
+    PyObject *count = positional_count > 1 ? args[1] : NULL;
+    PyObject *device = positional_count > 2 ? args[2] : NULL;
+    if (kwnames) {
+        Py_ssize_t const keyword_count = PyTuple_GET_SIZE(kwnames);
+        for (Py_ssize_t index = 0; index != keyword_count; ++index) {
+            PyObject *key = PyTuple_GET_ITEM(kwnames, index);
+            PyObject *value = args[positional_count + index];
+            if (PyUnicode_CompareWithASCIIString(key, "queries") == 0) {
+                if (queries) {
+                    PyErr_SetString(PyExc_TypeError, "LevenshteinIndex.nearest() got multiple values for 'queries'");
+                    return -1;
+                }
+                queries = value;
+            }
+            else if (PyUnicode_CompareWithASCIIString(key, "count") == 0) {
+                if (count) {
+                    PyErr_SetString(PyExc_TypeError, "LevenshteinIndex.nearest() got multiple values for 'count'");
+                    return -1;
+                }
+                count = value;
+            }
+            else if (PyUnicode_CompareWithASCIIString(key, "device") == 0) {
+                if (device) {
+                    PyErr_SetString(PyExc_TypeError, "LevenshteinIndex.nearest() got multiple values for 'device'");
+                    return -1;
+                }
+                device = value;
+            }
+            else {
+                PyErr_Format(PyExc_TypeError, "LevenshteinIndex.nearest() got an unexpected keyword argument '%U'",
+                             key);
+                return -1;
+            }
+        }
+    }
+    if (!queries) {
+        PyErr_SetString(PyExc_TypeError, "LevenshteinIndex.nearest() missing required argument 'queries'");
+        return -1;
+    }
+    *queries_out = queries;
+    *count_out = count;
+    *device_out = device;
+    return 0;
+}
+
+static PyObject *LevenshteinIndex_nearest(LevenshteinIndex *self, PyObject *const *args,
+                                          Py_ssize_t positional_count, PyObject *kwnames) {
+    PyObject *queries_obj = NULL, *count_obj = NULL, *device_obj = NULL;
+    if (parse_levenshtein_index_nearest_args(args, positional_count, kwnames, &queries_obj, &count_obj,
+                                             &device_obj) != 0)
+        return NULL;
+    sz_size_t count = 1;
+    if (count_obj && count_obj != Py_None) {
+        count = PyLong_AsSize_t(count_obj);
+        if (PyErr_Occurred()) return NULL;
+    }
+    DeviceScope *device_scope = NULL;
+    if (device_obj && device_obj != Py_None) {
+        if (!PyObject_TypeCheck(device_obj, &DeviceScopeType)) {
+            PyErr_SetString(PyExc_TypeError, "device must be a DeviceScope instance");
+            return NULL;
+        }
+        device_scope = (DeviceScope *)device_obj;
+    }
+
+    levenshtein_index_queries_t queries;
+    if (levenshtein_index_queries_export(queries_obj, &queries) != 0) {
+        levenshtein_index_queries_free(&queries);
+        return NULL;
+    }
+    levenshtein_index_nearest_kernel_t kernel;
+    if (self->utf8)
+        kernel = queries.layout == 32 ? (levenshtein_index_nearest_kernel_t)szs_levenshtein_index_utf8_nearest_u32tape
+                 : queries.layout == 64
+                     ? (levenshtein_index_nearest_kernel_t)szs_levenshtein_index_utf8_nearest_u64tape
+                     : (levenshtein_index_nearest_kernel_t)szs_levenshtein_index_utf8_nearest;
+    else
+        kernel = queries.layout == 32 ? (levenshtein_index_nearest_kernel_t)szs_levenshtein_index_nearest_u32tape
+                 : queries.layout == 64 ? (levenshtein_index_nearest_kernel_t)szs_levenshtein_index_nearest_u64tape
+                                        : (levenshtein_index_nearest_kernel_t)szs_levenshtein_index_nearest;
+
+    szs_device_scope_t device = device_scope ? device_scope->handle : default_device_scope;
+    sz_size_t results_found = 0;
+    char const *error_detail = NULL;
+    if (device_scope) SZS_LOCK_(&device_scope->lock);
+    SZS_LOCK_(&self->lock);
+    sz_status_t status = kernel(self->handle, device, queries.input, count, NULL, NULL, 0, &results_found,
+                                &error_detail);
+    SZS_UNLOCK_(&self->lock);
+    if (device_scope) SZS_UNLOCK_(&device_scope->lock);
+    if (status != sz_success_k &&
+        !(status == sz_unexpected_dimensions_k && results_found != 0)) {
+        set_stringzilla_error(status, error_detail, "LevenshteinIndex nearest search sizing");
+        levenshtein_index_queries_free(&queries);
+        return NULL;
+    }
+    if (queries.count > (sz_size_t)NPY_MAX_INTP || results_found > (sz_size_t)NPY_MAX_INTP) {
+        PyErr_SetString(PyExc_OverflowError, "nearest result is too large for NumPy");
+        levenshtein_index_queries_free(&queries);
+        return NULL;
+    }
+    sz_size_t const width = queries.count ? results_found / queries.count : 0;
+    if (width > (sz_size_t)NPY_MAX_INTP) {
+        PyErr_SetString(PyExc_OverflowError, "nearest result width is too large for NumPy");
+        levenshtein_index_queries_free(&queries);
+        return NULL;
+    }
+    npy_intp shape[2] = {(npy_intp)queries.count, (npy_intp)width};
+    PyObject *dictionary_indices = PyArray_SimpleNew(2, shape, NPY_UINT32);
+    PyObject *distances = PyArray_SimpleNew(2, shape, NPY_UINTP);
+    if (!dictionary_indices || !distances) {
+        Py_XDECREF(dictionary_indices);
+        Py_XDECREF(distances);
+        levenshtein_index_queries_free(&queries);
+        return NULL;
+    }
+
+    if (results_found) {
+        if (device_scope) SZS_LOCK_(&device_scope->lock);
+        SZS_LOCK_(&self->lock);
+        status = kernel(self->handle, device, queries.input, count,
+                        (sz_u32_t *)PyArray_DATA((PyArrayObject *)dictionary_indices),
+                        (sz_size_t *)PyArray_DATA((PyArrayObject *)distances), results_found, &results_found,
+                        &error_detail);
+        SZS_UNLOCK_(&self->lock);
+        if (device_scope) SZS_UNLOCK_(&device_scope->lock);
+        if (status != sz_success_k) {
+            set_stringzilla_error(status, error_detail, "LevenshteinIndex nearest search");
+            Py_DECREF(dictionary_indices);
+            Py_DECREF(distances);
+            levenshtein_index_queries_free(&queries);
+            return NULL;
+        }
+    }
+    PyObject *result = PyTuple_Pack(2, dictionary_indices, distances);
+    Py_DECREF(dictionary_indices);
+    Py_DECREF(distances);
+    levenshtein_index_queries_free(&queries);
+    return result;
+}
+
 static char const doc_LevenshteinIndex[] =
     "LevenshteinIndex(dictionary, max_distance=2, capabilities=None)\n\n"
     "Build an exact byte-level index for a dictionary that will be searched many times. Calling it with "
@@ -399,6 +553,12 @@ static PyGetSetDef LevenshteinIndex_getsetters[] = {
     {NULL}
 };
 
+static PyMethodDef LevenshteinIndex_methods[] = {
+    {"nearest", (PyCFunction)LevenshteinIndex_nearest, METH_FASTCALL | METH_KEYWORDS,
+     "nearest(queries, count=1, device=None)\n\nReturn dictionary IDs and exact distances for each query."},
+    {NULL}
+};
+
 #define SZS_LEVENSHTEIN_INDEX_TYPE_(name, doc)                                    \
     PyVarObject_HEAD_INIT(NULL, 0).tp_name = name,                                \
     .tp_doc = doc,                                                                 \
@@ -410,7 +570,8 @@ static PyGetSetDef LevenshteinIndex_getsetters[] = {
     .tp_dealloc = (destructor)LevenshteinIndex_dealloc,                            \
     .tp_call = PyVectorcall_Call,                                                   \
     .tp_repr = (reprfunc)LevenshteinIndex_repr,                                    \
-    .tp_getset = LevenshteinIndex_getsetters
+    .tp_getset = LevenshteinIndex_getsetters,                                     \
+    .tp_methods = LevenshteinIndex_methods
 
 PyTypeObject LevenshteinIndexType = {
     SZS_LEVENSHTEIN_INDEX_TYPE_("stringzillas.LevenshteinIndex", doc_LevenshteinIndex)};

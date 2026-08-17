@@ -72,16 +72,41 @@ def test_levenshtein_index_keeps_dictionary_ids():
     with pytest.raises(TypeError):
         index([b"book"], queries=[b"book"])
 
+    nearest_ids, nearest_distances = index.nearest([b"cook", b"book"], count=3)
+    assert nearest_ids.tolist() == [[0, 2, 3], [0, 2, 3]]
+    assert nearest_distances.tolist() == [[1, 1, 2], [0, 0, 1]]
+    assert nearest_ids.dtype.name == "uint32"
+    assert nearest_distances.dtype.name == ("uint64" if sys.maxsize > 2**32 else "uint32")
+    assert index.nearest(queries=[b"cook"], count=1)[0].tolist() == [[0]]
+    parallel_nearest = index.nearest(Strs([b"cook", b"book"]), count=3, device=parallel)
+    assert parallel_nearest[0].tolist() == nearest_ids.tolist()
+    assert parallel_nearest[1].tolist() == nearest_distances.tolist()
+    assert index.nearest([b"cook", b"book"], count=0)[0].shape == (2, 0)
+    assert index.nearest([], count=3)[0].shape == (0, 0)
+    with pytest.raises(TypeError):
+        index.nearest(count=1)
+    with pytest.raises(TypeError):
+        index.nearest([b"book"], queries=[b"book"])
+    with pytest.raises(OverflowError):
+        index.nearest([b"book"], count=-1)
+
     # More than eight matches per query exercises the output-capacity retry.
     dense_index = szs.LevenshteinIndex([b"same"] * 20, max_distance=1)
     dense_results = dense_index([b"same"], bound=0)
     assert len(dense_results[0]) == 20
     assert dense_results[1].tolist() == list(range(20))
     assert dense_results[2].tolist() == [0] * 20
+    assert dense_index.nearest([b"same"], count=3)[0].tolist() == [[0, 1, 2]]
 
     empty_index = szs.LevenshteinIndex([], max_distance=2)
     assert all(len(array) == 0 for array in empty_index([], bound=2))
     assert all(len(array) == 0 for array in empty_index([b"anything"], bound=2))
+    assert empty_index.nearest([b"anything"], count=3)[0].shape == (1, 0)
+
+    long_index = szs.LevenshteinIndex([b"a" * 300, b"b" * 300], max_distance=2)
+    long_ids, long_distances = long_index.nearest([b"c" * 600])
+    assert long_ids.tolist() == [[0]]
+    assert long_distances.tolist() == [[600]]
 
     with pytest.raises(ValueError):
         index([b"book"], bound=3)
@@ -102,8 +127,14 @@ def test_levenshtein_index_separates_byte_and_unicode_distance():
     unicode_matches = sorted(zip(*(array.tolist() for array in unicode_results)))
     assert unicode_matches == [(0, 0, 1), (0, 1, 0), (0, 4, 1), (1, 2, 0), (1, 3, 1)]
 
+    nearest_ids, nearest_distances = unicode_index.nearest(Strs(["cafe", "咖啡"]), count=3)
+    assert nearest_ids.tolist() == [[1, 0, 4], [2, 3, 0]]
+    assert nearest_distances.tolist() == [[0, 1, 1], [0, 1, 4]]
+
     with pytest.raises(ValueError):
         unicode_index([b"\xf0\x9f"], bound=1)
+    with pytest.raises(ValueError):
+        unicode_index.nearest([b"\xf0\x9f"])
     with pytest.raises(ValueError):
         szs.LevenshteinIndexUTF8([b"valid", b"\xf0\x9f"])
 
