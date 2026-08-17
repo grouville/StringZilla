@@ -69,8 +69,10 @@ struct levenshtein_index_reader_t {
     using alloc_t = typename index_type_::allocator_t;
     typename index_type_::scratch_t scratch;
     typename index_type_::matches_t matches;
+    typename index_type_::neighbors_t neighbors;
 
-    explicit levenshtein_index_reader_t(alloc_t alloc = {}) noexcept : scratch(alloc), matches(alloc) {}
+    explicit levenshtein_index_reader_t(alloc_t alloc = {}) noexcept
+        : scratch(alloc), matches(alloc), neighbors(alloc) {}
 };
 
 template <typename index_type_>
@@ -230,6 +232,100 @@ sz_status_t szs_levenshtein_index_find_(                                      //
     return propagate_error(status, error_message);
 }
 
+template <typename engine_type_, typename queries_type_, typename executor_type_>
+sz::status_t szs_levenshtein_index_nearest_with_(                          //
+    engine_type_ &engine, queries_type_ const &queries, sz_size_t count,    //
+    sz_u32_t *dictionary_indices, sz_size_t *distances,                     //
+    sz_size_t results_capacity, sz_size_t &results_found,                   //
+    executor_type_ &executor) noexcept {
+
+    sz_size_t const width = sz_min_of_two(count, engine.index.size());
+    if (queries.size() && width > std::numeric_limits<sz_size_t>::max() / queries.size()) {
+        results_found = 0;
+        return sz::status_t::overflow_risk_k;
+    }
+    results_found = queries.size() * width;
+    if (results_capacity < results_found) return sz::status_t::unexpected_dimensions_k;
+    if (results_capacity && (!dictionary_indices || !distances)) return sz::status_t::unexpected_dimensions_k;
+    if (!results_found) return sz::status_t::success_k;
+    if (sz::status_t status = engine.prepare_readers(executor.threads_count()); status != sz::status_t::success_k) {
+        results_found = 0;
+        return status;
+    }
+
+    if (executor.threads_count() == 1) {
+        auto &reader = engine.readers[0];
+        for (sz_size_t query_idx = 0; query_idx != queries.size(); ++query_idx) {
+            auto const query = queries[query_idx];
+            if (sz::status_t status = engine.index.nearest({query.data(), query.size()}, width, reader.scratch,
+                                                            reader.neighbors);
+                status != sz::status_t::success_k) {
+                results_found = 0;
+                return status;
+            }
+            sz_size_t const output_offset = query_idx * width;
+            for (sz_size_t neighbor_idx = 0; neighbor_idx != width; ++neighbor_idx) {
+                auto const &neighbor = reader.neighbors[neighbor_idx];
+                dictionary_indices[output_offset + neighbor_idx] = neighbor.id;
+                distances[output_offset + neighbor_idx] = neighbor.distance;
+            }
+        }
+        return sz::status_t::success_k;
+    }
+
+    szs::atomic_status_t shared_status;
+    executor.for_n_dynamic(queries.size(), [&](typename executor_type_::prong_t prong) noexcept {
+        if (static_cast<sz::status_t>(shared_status) != sz::status_t::success_k) return;
+        auto &reader = engine.readers[prong.thread];
+        auto const query = queries[prong.task];
+        sz::status_t const status =
+            engine.index.nearest({query.data(), query.size()}, width, reader.scratch, reader.neighbors);
+        if (status != sz::status_t::success_k) {
+            shared_status = status;
+            return;
+        }
+        sz_size_t const output_offset = static_cast<sz_size_t>(prong.task) * width;
+        for (sz_size_t neighbor_idx = 0; neighbor_idx != width; ++neighbor_idx) {
+            auto const &neighbor = reader.neighbors[neighbor_idx];
+            dictionary_indices[output_offset + neighbor_idx] = neighbor.id;
+            distances[output_offset + neighbor_idx] = neighbor.distance;
+        }
+    });
+    if (static_cast<sz::status_t>(shared_status) != sz::status_t::success_k) {
+        results_found = 0;
+        return shared_status;
+    }
+    return sz::status_t::success_k;
+}
+
+template <typename engine_type_, typename queries_type_>
+sz_status_t szs_levenshtein_index_nearest_(                              //
+    engine_type_ &engine, device_scope_t &device, queries_type_ const &queries, //
+    sz_size_t count, sz_u32_t *dictionary_indices, sz_size_t *distances,  //
+    sz_size_t results_capacity, sz_size_t *results_found,                 //
+    char const **error_message) noexcept {
+
+    sz_assert_(results_found != nullptr && "Result count output must not be null");
+    *results_found = 0;
+    sz::status_t const status = std::visit(
+        [&](auto &scope) -> sz::status_t {
+            using scope_t = std::decay_t<decltype(scope)>;
+            if constexpr (!is_cpu_scope<scope_t>()) return sz::status_t::device_code_mismatch_k;
+            else {
+                constexpr bool is_parallel_k = std::is_same<scope_t, cpu_scope_t>::value;
+                if (is_parallel_k && !(engine.capabilities & sz_cap_parallel_k))
+                    return sz::status_t::device_code_mismatch_k;
+                auto &&executor = get_executor(scope);
+                return szs_levenshtein_index_nearest_with_(engine, queries, count, dictionary_indices, distances,
+                                                           results_capacity, *results_found, executor);
+            }
+        },
+        device.variants);
+    if (status == sz::status_t::unexpected_dimensions_k && *results_found > results_capacity)
+        return propagate_error(status, error_message, "Levenshtein nearest output is too small");
+    return propagate_error(status, error_message);
+}
+
 extern "C" {
 
 #define SZS_LEVENSHTEIN_INDEX_INIT_(function_name, handle_type, index_type, dictionary_type, wrapper_type)            \
@@ -291,6 +387,39 @@ SZS_LEVENSHTEIN_INDEX_FIND_(szs_levenshtein_index_utf8_find_u64tape, szs_levensh
                             sz_sequence_u64tape_as_cpp_container_t)
 
 #undef SZS_LEVENSHTEIN_INDEX_FIND_
+
+#define SZS_LEVENSHTEIN_INDEX_NEAREST_(function_name, handle_type, engine_type, queries_type, wrapper_type)          \
+    SZ_API_RUNTIME sz_status_t function_name(                                                                         \
+        handle_type index, szs_device_scope_t device, queries_type const *queries, sz_size_t count,                  \
+        sz_u32_t *dictionary_indices, sz_size_t *distances, sz_size_t results_capacity,                              \
+        sz_size_t *results_found, char const **error_message) {                                                       \
+        sz_assert_(index != nullptr && "Index must be initialized");                                                  \
+        sz_assert_(device != nullptr && "Device scope must be initialized");                                          \
+        sz_assert_(queries != nullptr && "Queries must not be null");                                                 \
+        auto &engine = *reinterpret_cast<engine_type *>(index);                                                       \
+        auto &scope = *reinterpret_cast<device_scope_t *>(device);                                                    \
+        return szs_levenshtein_index_nearest_(engine, scope, wrapper_type {queries}, count, dictionary_indices,       \
+                                              distances, results_capacity, results_found, error_message);             \
+    }
+
+SZS_LEVENSHTEIN_INDEX_NEAREST_(szs_levenshtein_index_nearest, szs_levenshtein_index_t,
+                               levenshtein_index_engine_bytes_t, sz_sequence_t, sz_sequence_as_cpp_container_t)
+SZS_LEVENSHTEIN_INDEX_NEAREST_(szs_levenshtein_index_nearest_u32tape, szs_levenshtein_index_t,
+                               levenshtein_index_engine_bytes_t, sz_sequence_u32tape_t,
+                               sz_sequence_u32tape_as_cpp_container_t)
+SZS_LEVENSHTEIN_INDEX_NEAREST_(szs_levenshtein_index_nearest_u64tape, szs_levenshtein_index_t,
+                               levenshtein_index_engine_bytes_t, sz_sequence_u64tape_t,
+                               sz_sequence_u64tape_as_cpp_container_t)
+SZS_LEVENSHTEIN_INDEX_NEAREST_(szs_levenshtein_index_utf8_nearest, szs_levenshtein_index_utf8_t,
+                               levenshtein_index_engine_utf8_t, sz_sequence_t, sz_sequence_as_cpp_container_t)
+SZS_LEVENSHTEIN_INDEX_NEAREST_(szs_levenshtein_index_utf8_nearest_u32tape, szs_levenshtein_index_utf8_t,
+                               levenshtein_index_engine_utf8_t, sz_sequence_u32tape_t,
+                               sz_sequence_u32tape_as_cpp_container_t)
+SZS_LEVENSHTEIN_INDEX_NEAREST_(szs_levenshtein_index_utf8_nearest_u64tape, szs_levenshtein_index_utf8_t,
+                               levenshtein_index_engine_utf8_t, sz_sequence_u64tape_t,
+                               sz_sequence_u64tape_as_cpp_container_t)
+
+#undef SZS_LEVENSHTEIN_INDEX_NEAREST_
 
 SZ_API_RUNTIME void szs_levenshtein_index_free(szs_levenshtein_index_t index) {
     sz_assert_(index != nullptr && "Index must be initialized");

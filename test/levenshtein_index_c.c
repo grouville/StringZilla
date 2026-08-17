@@ -63,8 +63,30 @@ int main(void) {
         else ++book_matches;
     }
     if (cook_matches != 2 || book_matches != 3) return 9;
+
+    sz_size_t nearest_count = 0;
+    if (szs_levenshtein_index_nearest_u32tape(index, device, &queries, 2, NULL, NULL, 0, &nearest_count,
+                                              &error_message) != sz_unexpected_dimensions_k ||
+        nearest_count != 4)
+        return 10;
+    sz_u32_t nearest_ids[4];
+    sz_size_t nearest_distances[4];
+    if (szs_levenshtein_index_nearest_u32tape(index, device, &queries, 2, nearest_ids, nearest_distances, 4,
+                                              &nearest_count, &error_message) != sz_success_k ||
+        nearest_count != 4)
+        return 11;
+    sz_u32_t const expected_nearest_ids[] = {0, 2, 0, 2};
+    sz_size_t const expected_nearest_distances[] = {1, 1, 0, 0};
+    for (sz_size_t result = 0; result != nearest_count; ++result)
+        if (nearest_ids[result] != expected_nearest_ids[result] ||
+            nearest_distances[result] != expected_nearest_distances[result])
+            return 12;
+    if (szs_levenshtein_index_nearest_u32tape(index, device, &queries, 0, NULL, NULL, 0, &nearest_count,
+                                              &error_message) != sz_success_k ||
+        nearest_count != 0)
+        return 13;
     szs_levenshtein_index_free(index);
-    if (!allocated_bytes || allocated_bytes != freed_bytes) return 10;
+    if (!allocated_bytes || allocated_bytes != freed_bytes) return 14;
 
     char const utf8_dictionary_data[] = "caf\xC3\xA9" "cafe" "\xE5\x92\x96\xE5\x95\xA1"
                                         "\xE5\x92\x96\xE9\x9D\x9E";
@@ -73,7 +95,7 @@ int main(void) {
     szs_levenshtein_index_utf8_t utf8_index = NULL;
     if (szs_levenshtein_index_utf8_init_u32tape(&utf8_dictionary, 2, NULL, sz_caps_sp_k, &utf8_index,
                                                 &error_message) != sz_success_k)
-        return 11;
+        return 15;
     char const utf8_queries_data[] = "\xE5\x92\x96\xE5\x95\xA1" "\xF0\x9F";
     sz_u32_t const utf8_queries_offsets[] = {0, 6, 8};
     sz_sequence_u32tape_t utf8_queries = {utf8_queries_data, utf8_queries_offsets, 2};
@@ -81,8 +103,14 @@ int main(void) {
     if (szs_levenshtein_index_utf8_find_u32tape(utf8_index, device, &utf8_queries, 1, query_ids_full,
                                                 dictionary_ids_full, distances_full, 5, &matches_count,
                                                 &error_message) != sz_invalid_utf8_k)
-        return 12;
-    if (matches_count != 0) return 13;
+        return 16;
+    if (matches_count != 0) return 17;
+    sz_sequence_u32tape_t valid_utf8_query = {utf8_queries_data, utf8_queries_offsets, 1};
+    if (szs_levenshtein_index_utf8_nearest_u32tape(utf8_index, device, &valid_utf8_query, 1, nearest_ids,
+                                                   nearest_distances, 1, &nearest_count,
+                                                   &error_message) != sz_success_k ||
+        nearest_count != 1 || nearest_ids[0] != 2 || nearest_distances[0] != 0)
+        return 18;
     szs_levenshtein_index_utf8_free(utf8_index);
     szs_device_scope_free(device);
     return 0;

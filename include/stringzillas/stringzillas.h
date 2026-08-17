@@ -315,6 +315,36 @@ SZ_API_RUNTIME sz_status_t szs_levenshtein_index_find_u64tape(                  
     sz_u64_t *query_indices, sz_u32_t *dictionary_indices, sz_u8_t *distances,          //
     sz_size_t matches_capacity, sz_size_t *matches_found, char const **error_message);
 
+/**
+ *  @brief Find the nearest byte-string dictionary entries for every query.
+ *  @param[in] count Maximum results per query.
+ *  @param[out] dictionary_indices Original dictionary IDs in query-major order.
+ *  @param[out] distances Exact edit distances in query-major order.
+ *  @param[in] results_capacity Capacity shared by both output arrays.
+ *  @param[out] results_found Required output length, including when capacity is insufficient.
+ *  @note Every query returns `min(count, dictionary_size)` entries ordered by distance and then dictionary ID.
+ *        Pass NULL outputs and zero capacity to measure the required output length without running the search.
+ */
+SZ_API_RUNTIME sz_status_t szs_levenshtein_index_nearest(                      //
+    szs_levenshtein_index_t index, szs_device_scope_t device,                  //
+    sz_sequence_t const *queries, sz_size_t count,                             //
+    sz_u32_t *dictionary_indices, sz_size_t *distances,                        //
+    sz_size_t results_capacity, sz_size_t *results_found, char const **error_message);
+
+/** @copydoc szs_levenshtein_index_nearest */
+SZ_API_RUNTIME sz_status_t szs_levenshtein_index_nearest_u32tape(                 //
+    szs_levenshtein_index_t index, szs_device_scope_t device,                     //
+    sz_sequence_u32tape_t const *queries, sz_size_t count,                        //
+    sz_u32_t *dictionary_indices, sz_size_t *distances,                           //
+    sz_size_t results_capacity, sz_size_t *results_found, char const **error_message);
+
+/** @copydoc szs_levenshtein_index_nearest */
+SZ_API_RUNTIME sz_status_t szs_levenshtein_index_nearest_u64tape(                 //
+    szs_levenshtein_index_t index, szs_device_scope_t device,                     //
+    sz_sequence_u64tape_t const *queries, sz_size_t count,                        //
+    sz_u32_t *dictionary_indices, sz_size_t *distances,                           //
+    sz_size_t results_capacity, sz_size_t *results_found, char const **error_message);
+
 /** @brief Free a byte-string dictionary index. */
 SZ_API_RUNTIME void szs_levenshtein_index_free(szs_levenshtein_index_t index);
 
@@ -363,6 +393,27 @@ SZ_API_RUNTIME sz_status_t szs_levenshtein_index_utf8_find_u64tape(             
     sz_sequence_u64tape_t const *queries, sz_size_t bound,                             //
     sz_u64_t *query_indices, sz_u32_t *dictionary_indices, sz_u8_t *distances,          //
     sz_size_t matches_capacity, sz_size_t *matches_found, char const **error_message);
+
+/** @brief UTF-8 codepoint counterpart of @ref szs_levenshtein_index_nearest. */
+SZ_API_RUNTIME sz_status_t szs_levenshtein_index_utf8_nearest(                 //
+    szs_levenshtein_index_utf8_t index, szs_device_scope_t device,             //
+    sz_sequence_t const *queries, sz_size_t count,                             //
+    sz_u32_t *dictionary_indices, sz_size_t *distances,                        //
+    sz_size_t results_capacity, sz_size_t *results_found, char const **error_message);
+
+/** @copydoc szs_levenshtein_index_utf8_nearest */
+SZ_API_RUNTIME sz_status_t szs_levenshtein_index_utf8_nearest_u32tape(            //
+    szs_levenshtein_index_utf8_t index, szs_device_scope_t device,                //
+    sz_sequence_u32tape_t const *queries, sz_size_t count,                        //
+    sz_u32_t *dictionary_indices, sz_size_t *distances,                           //
+    sz_size_t results_capacity, sz_size_t *results_found, char const **error_message);
+
+/** @copydoc szs_levenshtein_index_utf8_nearest */
+SZ_API_RUNTIME sz_status_t szs_levenshtein_index_utf8_nearest_u64tape(            //
+    szs_levenshtein_index_utf8_t index, szs_device_scope_t device,                //
+    sz_sequence_u64tape_t const *queries, sz_size_t count,                        //
+    sz_u32_t *dictionary_indices, sz_size_t *distances,                           //
+    sz_size_t results_capacity, sz_size_t *results_found, char const **error_message);
 
 /** @brief Free a UTF-8 dictionary index. */
 SZ_API_RUNTIME void szs_levenshtein_index_utf8_free(szs_levenshtein_index_utf8_t index);
