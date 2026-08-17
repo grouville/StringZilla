@@ -354,6 +354,113 @@ static int test_levenshtein_index_unit_impl_() {
         }
     }
 
+    // Nearest retrieval returns a deterministic prefix of the complete distance ordering.
+    szs::levenshtein_index<>::neighbors_t neighbors;
+    for (std::size_t query_id = 0; query_id != dictionary.size(); ++query_id) {
+        auto const &query = dictionary[query_id];
+        std::vector<std::pair<std::size_t, std::uint32_t>> expected;
+        for (std::uint32_t id = 0; id != dictionary.size(); ++id)
+            expected.emplace_back(reference_distance(dictionary[id], query), id);
+        std::sort(expected.begin(), expected.end());
+        std::size_t const counts[] = {1, 3, 10};
+        for (std::size_t count : counts) {
+            if (index.nearest({query.data(), query.size()}, count, scratch, neighbors) != sz::status_t::success_k ||
+                neighbors.size() != count)
+                return 37;
+            for (std::size_t position = 0; position != count; ++position)
+                if (neighbors[position].distance != expected[position].first ||
+                    neighbors[position].id != expected[position].second)
+                    return 38;
+        }
+        if (query_id % 31 == 0) {
+            if (index.nearest({query.data(), query.size()}, 0, scratch, neighbors) != sz::status_t::success_k ||
+                neighbors.size() != 0)
+                return 39;
+            if (index.nearest({query.data(), query.size()}, dictionary.size() + 3, scratch, neighbors) !=
+                    sz::status_t::success_k ||
+                neighbors.size() != dictionary.size())
+                return 40;
+            for (std::size_t position = 0; position != expected.size(); ++position)
+                if (neighbors[position].distance != expected[position].first ||
+                    neighbors[position].id != expected[position].second)
+                    return 41;
+        }
+    }
+
+    // Duplicate-heavy exact matches retain the smallest original IDs without materializing all bounded matches.
+    std::vector<std::string> duplicate_dictionary(128, "same");
+    szs::levenshtein_index<> duplicate_index;
+    if (duplicate_index.try_build(duplicate_dictionary, 2) != sz::status_t::success_k ||
+        duplicate_index.nearest({duplicate_dictionary[0].data(), duplicate_dictionary[0].size()}, 3, scratch,
+                                neighbors) != sz::status_t::success_k ||
+        neighbors.size() != 3 || neighbors[0].id != 0 || neighbors[1].id != 1 || neighbors[2].id != 2 ||
+        neighbors[0].distance != 0 || neighbors[1].distance != 0 || neighbors[2].distance != 0)
+        return 42;
+
+    // Unbounded distances use size_t rather than the bounded result's one-byte distance.
+    std::vector<std::string> very_long_dictionary = {std::string(300, 'a'), std::string(300, 'b')};
+    std::string very_long_query(600, 'c');
+    szs::levenshtein_index<> very_long_index;
+    if (very_long_index.try_build(very_long_dictionary, 2) != sz::status_t::success_k ||
+        very_long_index.nearest({very_long_query.data(), very_long_query.size()}, 1, scratch, neighbors) !=
+            sz::status_t::success_k ||
+        neighbors.size() != 1 || neighbors[0].id != 0 || neighbors[0].distance != 600)
+        return 43;
+
+    // Unicode nearest retrieval keeps codepoint semantics and rejects malformed UTF-8 queries.
+    szs::basic_levenshtein_index<char32_t>::neighbors_t unicode_neighbors;
+    for (auto const &query : unicode_dictionary) {
+        std::vector<std::pair<std::size_t, std::uint32_t>> expected;
+        for (std::uint32_t id = 0; id != unicode_dictionary.size(); ++id)
+            expected.emplace_back(reference_distance(unicode_dictionary[id], query), id);
+        std::sort(expected.begin(), expected.end());
+        if (unicode_index.nearest({query.data(), query.size()}, 3, unicode_scratch, unicode_neighbors) !=
+                sz::status_t::success_k ||
+            unicode_neighbors.size() != 3)
+            return 44;
+        for (std::size_t position = 0; position != 3; ++position)
+            if (unicode_neighbors[position].distance != expected[position].first ||
+                unicode_neighbors[position].id != expected[position].second)
+                return 45;
+    }
+    szs::levenshtein_index_utf8<>::neighbors_t utf8_neighbors;
+    if (utf8_index.nearest({coffee_query.data(), coffee_query.size()}, 2, utf8_scratch, utf8_neighbors) !=
+            sz::status_t::success_k ||
+        utf8_neighbors.size() != 2 || utf8_neighbors[0].id != 2 || utf8_neighbors[0].distance != 0 ||
+        utf8_index.nearest({malformed.data(), malformed.size()}, 1, utf8_scratch, utf8_neighbors) !=
+            sz::status_t::invalid_utf8_k ||
+        utf8_neighbors.size() != 0)
+        return 46;
+
+    // Independent readers may perform nearest and bounded searches against the same immutable index.
+    bool nearest_concurrent_ok[2] = {false, false};
+    std::thread nearest_workers[2];
+    for (std::size_t worker = 0; worker != 2; ++worker)
+        nearest_workers[worker] = std::thread([&, worker] {
+            szs::levenshtein_index<>::scratch_t worker_scratch;
+            szs::levenshtein_index<>::neighbors_t worker_neighbors;
+            auto const &query = dictionary[dictionary.size() - 1 - worker];
+            nearest_concurrent_ok[worker] =
+                index.nearest({query.data(), query.size()}, 3, worker_scratch, worker_neighbors) ==
+                    sz::status_t::success_k &&
+                worker_neighbors.size() == 3 && worker_neighbors[0].distance == 0;
+        });
+    for (auto &worker : nearest_workers) worker.join();
+    if (!nearest_concurrent_ok[0] || !nearest_concurrent_ok[1]) return 47;
+
+    // Every search-time allocation failure remains observable to the caller.
+    failing_index_t::neighbors_t failing_neighbors {failing_allocator};
+    failing_index_t::scratch_t nearest_failing_scratch {failing_allocator};
+    failing_state.fail = true;
+    if (failing_index.nearest({failing_dictionary[0].data(), failing_dictionary[0].size()}, 1,
+                              nearest_failing_scratch, failing_neighbors) != sz::status_t::bad_alloc_k)
+        return 48;
+    failing_state.fail = false;
+    if (failing_index.nearest({failing_dictionary[0].data(), failing_dictionary[0].size()}, 1,
+                              nearest_failing_scratch, failing_neighbors) != sz::status_t::success_k ||
+        failing_neighbors.size() != 1 || failing_neighbors[0].id != 0 || failing_neighbors[0].distance != 0)
+        return 49;
+
     std::cout << "OK: " << checks << " exhaustive memberships, records=" << index.records_count()
               << " index_bytes=" << index.index_bytes() << '\n';
     return 0;

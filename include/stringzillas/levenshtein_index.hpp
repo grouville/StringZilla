@@ -26,6 +26,11 @@ struct levenshtein_index_match_t {
     u8_t distance;
 };
 
+struct levenshtein_index_neighbor_t {
+    u32_t id;
+    size_t distance;
+};
+
 /**
  *  @brief Owns an immutable dictionary and returns matching IDs with exact distances.
  *
@@ -38,6 +43,7 @@ class basic_levenshtein_index {
     using symbol_t = symbol_type_;
     using allocator_t = allocator_type_;
     using match_t = levenshtein_index_match_t;
+    using neighbor_t = levenshtein_index_neighbor_t;
     static constexpr size_t automatic_deletion_max_word_length_k = std::numeric_limits<size_t>::max();
 
     static_assert(std::is_integral<symbol_t>::value &&
@@ -592,6 +598,122 @@ class basic_levenshtein_index {
         }
         for (u32_t id : order)
             trie_terminals_[terminal_cursors[word_nodes[id]]++] = id;
+        return status_t::success_k;
+    }
+
+    static bool neighbor_better_(neighbor_t const &first, neighbor_t const &second) noexcept {
+        return first.distance < second.distance ||
+               (first.distance == second.distance && first.id < second.id);
+    }
+
+    template <typename scratch_type_>
+    status_t nearest_bounded_(span<symbol_t const> query, size_t count, u8_t bound, scratch_type_ &scratch,
+                              vector_t<neighbor_t> &neighbors, bool &complete) const noexcept {
+        complete = false;
+        if (status_t status = neighbors.try_resize(0); status != status_t::success_k) return status;
+        count = sz_min_of_two(count, size());
+        if (!count) {
+            complete = true;
+            return status_t::success_k;
+        }
+        // A partial deletion table cannot rule out a better long-word match. Scan the complete dictionary instead of
+        // materializing partial results before that scan.
+        if (bound > 2 || fallback_words_count_ || (!packed_records_.size() && !wide_records_.size()))
+            return status_t::success_k;
+        if (query.size() > deletion_max_word_length_ && query.size() - deletion_max_word_length_ > bound)
+            return status_t::success_k;
+        if (scratch.generations.size() != size()) {
+            if (status_t status = scratch.generations.try_resize(size()); status != status_t::success_k) return status;
+            std::fill(scratch.generations.begin(), scratch.generations.end(), u32_t(0));
+            scratch.generation = 0;
+        }
+        if (++scratch.generation == 0) {
+            std::fill(scratch.generations.begin(), scratch.generations.end(), u32_t(0));
+            scratch.generation = 1;
+        }
+        if (status_t status = generate_residuals_(query, bound, false, scratch); status != status_t::success_k)
+            return status;
+
+        auto const consider = [&](u32_t id) noexcept -> status_t {
+            if (scratch.generations[id] == scratch.generation) return status_t::success_k;
+            scratch.generations[id] = scratch.generation;
+            u8_t distance = rejected_distance_k;
+            if (status_t status = verify_(id, query, bound, scratch, distance); status != status_t::success_k)
+                return status;
+            if (distance > bound) return status_t::success_k;
+            neighbor_t const result {id, distance};
+            if (neighbors.size() != count) {
+                if (status_t status = neighbors.try_push_back(result); status != status_t::success_k) return status;
+                std::push_heap(neighbors.begin(), neighbors.end(), neighbor_better_);
+            }
+            else if (neighbor_better_(result, neighbors.front())) {
+                std::pop_heap(neighbors.begin(), neighbors.end(), neighbor_better_);
+                neighbors.back() = result;
+                std::push_heap(neighbors.begin(), neighbors.end(), neighbor_better_);
+            }
+            return status_t::success_k;
+        };
+
+        for (u32_t hash : scratch.residuals) {
+            size_t begin_offset = 0, end_offset = 0;
+            if (!bucket_(hash, begin_offset, end_offset)) continue;
+            if (!packed_records_.size()) {
+                u64_t const key = u64_t(hash) << 32;
+                u64_t const *record = std::lower_bound(wide_records_.begin() + begin_offset,
+                                                       wide_records_.begin() + end_offset, key);
+                u64_t const *const end = wide_records_.begin() + end_offset;
+                for (; record != end && static_cast<u32_t>(*record >> 32) == hash; ++record)
+                    if (status_t status = consider(static_cast<u32_t>(*record)); status != status_t::success_k)
+                        return status;
+            }
+            else {
+                u32_t const suffix = hash & suffix_mask_;
+                u32_t const key = suffix << packed_id_bits_k;
+                u32_t const *record = std::lower_bound(packed_records_.begin() + begin_offset,
+                                                       packed_records_.begin() + end_offset, key);
+                u32_t const *const end = packed_records_.begin() + end_offset;
+                for (; record != end && (*record >> packed_id_bits_k) == suffix; ++record)
+                    if (status_t status = consider(*record & packed_id_mask_k); status != status_t::success_k)
+                        return status;
+            }
+        }
+        if (neighbors.size() < count) return status_t::success_k;
+        std::sort_heap(neighbors.begin(), neighbors.end(), neighbor_better_);
+        complete = true;
+        return status_t::success_k;
+    }
+
+    template <typename scratch_type_>
+    status_t nearest_dense_(span<symbol_t const> query, size_t count, scratch_type_ &scratch,
+                            vector_t<neighbor_t> &neighbors) const noexcept {
+        if (status_t status = neighbors.try_resize(0); status != status_t::success_k) return status;
+        count = sz_min_of_two(count, size());
+        if (!count) return status_t::success_k;
+        dense_query_t state;
+        if (status_t status = prepare_dense_query_(query, scratch, state); status != status_t::success_k) return status;
+        for (u32_t id = 0; id != size(); ++id) {
+            span<symbol_t const> const candidate = word_(id);
+            size_t const cutoff = neighbors.size() == count ? neighbors.front().distance
+                                                            : std::numeric_limits<size_t>::max();
+            size_t const length_difference = query.size() > candidate.size() ? query.size() - candidate.size()
+                                                                            : candidate.size() - query.size();
+            if (length_difference > cutoff) continue;
+            size_t distance = 0;
+            bool rejected = false;
+            distance_dense_(query, candidate, cutoff, state, scratch, distance, rejected);
+            if (rejected) continue;
+            neighbor_t const result {id, distance};
+            if (neighbors.size() != count) {
+                if (status_t status = neighbors.try_push_back(result); status != status_t::success_k) return status;
+                std::push_heap(neighbors.begin(), neighbors.end(), neighbor_better_);
+            }
+            else if (neighbor_better_(result, neighbors.front())) {
+                std::pop_heap(neighbors.begin(), neighbors.end(), neighbor_better_);
+                neighbors.back() = result;
+                std::push_heap(neighbors.begin(), neighbors.end(), neighbor_better_);
+            }
+        }
+        std::sort_heap(neighbors.begin(), neighbors.end(), neighbor_better_);
         return status_t::success_k;
     }
 
@@ -1166,6 +1288,7 @@ class basic_levenshtein_index {
     };
 
     using matches_t = vector_t<match_t>;
+    using neighbors_t = vector_t<neighbor_t>;
 
     explicit basic_levenshtein_index(allocator_t alloc = {}) noexcept
         : alloc_(alloc), tape_(alloc), offsets_(alloc), directory_(alloc), directory_words_(alloc),
@@ -1270,6 +1393,20 @@ class basic_levenshtein_index {
         return status_t::success_k;
     }
 
+    /** @brief Finds up to @p count nearest entries, ordered by exact distance and original dictionary ID. */
+    status_t nearest(span<symbol_t const> query, size_t count, scratch_t &scratch,
+                     neighbors_t &neighbors) const noexcept {
+        size_t const wanted = sz_min_of_two(count, size());
+        if (!wanted) return neighbors.try_resize(0);
+        bool complete = false;
+        u8_t const seed_bound = sz_min_of_two(max_distance_, u8_t(2));
+        if (status_t status = nearest_bounded_(query, wanted, seed_bound, scratch, neighbors, complete);
+            status != status_t::success_k)
+            return status;
+        if (complete) return status_t::success_k;
+        return nearest_dense_(query, wanted, scratch, neighbors);
+    }
+
     size_t size() const noexcept { return offsets_.size() ? offsets_.size() - 1 : 0; }
     u8_t max_distance() const noexcept { return max_distance_; }
     size_t max_word_length() const noexcept { return max_word_length_; }
@@ -1303,6 +1440,8 @@ class levenshtein_index_utf8 {
     using index_t = basic_levenshtein_index<rune_t, allocator_t>;
     using match_t = typename index_t::match_t;
     using matches_t = typename index_t::matches_t;
+    using neighbor_t = typename index_t::neighbor_t;
+    using neighbors_t = typename index_t::neighbors_t;
     static constexpr size_t automatic_deletion_max_word_length_k = index_t::automatic_deletion_max_word_length_k;
 
   private:
@@ -1396,6 +1535,14 @@ class levenshtein_index_utf8 {
         if (status_t status = decode_(query, scratch.query_runes_); status != status_t::success_k) return status;
         return index_.find({scratch.query_runes_.data(), scratch.query_runes_.size()}, bound, scratch.index_scratch_,
                            matches);
+    }
+
+    /** @brief Finds nearest entries after validating and decoding one UTF-8 query. */
+    status_t nearest(span<char const> query, size_t count, scratch_t &scratch, neighbors_t &neighbors) const noexcept {
+        if (status_t status = neighbors.try_resize(0); status != status_t::success_k) return status;
+        if (status_t status = decode_(query, scratch.query_runes_); status != status_t::success_k) return status;
+        return index_.nearest({scratch.query_runes_.data(), scratch.query_runes_.size()}, count,
+                              scratch.index_scratch_, neighbors);
     }
 
     size_t size() const noexcept { return index_.size(); }
