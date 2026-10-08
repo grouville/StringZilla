@@ -87,6 +87,22 @@ static void check_sort_unit_(sz_sequence_argsort_t argsort, sz_sequence_t const 
     std::vector<sz_sorted_idx_t> order(expected.size());
     verify(argsort(sequence, nullptr, order.data(), 0, sz_false_k) == sz_success_k);
     verify(order == expected);
+
+    // Empty and singleton inputs need no scratch storage in either direction, including top-K.
+    sz_memory_allocator_t allocator = {};
+    allocator.allocate = [](sz_size_t, void *) -> void * { return nullptr; };
+    allocator.free = [](void *, sz_size_t, void *) {};
+    for (sz_size_t count : {0u, 1u})
+        for (sz_bool_t reverse : {sz_false_k, sz_true_k})
+            for (sz_size_t top_count : {0u, 1u, 2u}) {
+                sz_sequence_t trivial_sequence = *sequence;
+                trivial_sequence.count = count;
+                sz_sorted_idx_t trivial_order[] = {12345u, 67890u};
+                verify(argsort(&trivial_sequence, &allocator, count ? trivial_order : nullptr, top_count, reverse) ==
+                       sz_success_k);
+                verify(trivial_order[0] == (count ? 0u : 12345u));
+                verify(trivial_order[1] == 67890u);
+            }
 }
 
 /** @brief Runs one sequence intersect backend over both inputs and asserts the matched (first, second) pairs. */

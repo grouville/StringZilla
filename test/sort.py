@@ -316,12 +316,13 @@ def test_unit_backend_differential_sorted_argsort_top_reverse(seed_value, batch_
     assert_sort_family_matches_oracles(native_list, top=top, reverse=reverse)
 
 
-def test_unit_backend_differential_sorted_argsort_empty():
-    """An empty `Strs` collection sorts to empty on every `capability_sweep()` backend for every
-    `uncased`/`reverse` combination; a divergence is a kernel bug, not a binding bug."""
+@pytest.mark.parametrize("native_list", [[], ["apple"]])
+@pytest.mark.parametrize("top", [None, 1, 2])
+def test_unit_backend_differential_sorted_argsort_trivial(native_list, top):
+    """Empty and singleton collections keep their order in either direction on every backend."""
     for uncased in (False, True):
         for reverse in (False, True):
-            assert_sort_family_matches_oracles([], uncased=uncased, reverse=reverse)
+            assert_sort_family_matches_oracles(native_list, top=top, uncased=uncased, reverse=reverse)
 
 
 # endregion Backend differential
