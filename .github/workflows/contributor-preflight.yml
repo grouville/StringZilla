@@ -1,0 +1,155 @@
+# Focused checks on the contributor fork before updating the upstream PR.
+name: Contributor v6 preflight
+'on':
+  push:
+    branches:
+    - ci-v6-preflight-package-20261020
+permissions:
+  contents: read
+  actions: read
+env:
+  BUILD_TYPE: Release
+  PYTHON_VERSION: 3.13
+  PYTHONUTF8: 1
+  WASI_SDK_VERSION: '34'
+  WASMTIME_VERSION: v48.0.3
+jobs:
+  packages:
+    name: Build Python ${{ matrix.python-version }} wheels for ${{ matrix.arch }}
+    runs-on: ubuntu-26.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - arch: i686
+          python-version: '310'
+        - arch: i686
+          python-version: '311'
+        - arch: i686
+          python-version: '312'
+        - arch: i686
+          python-version: '313'
+        - arch: i686
+          python-version: '314'
+        - arch: armv7l
+          python-version: '312'
+        - arch: armv7l
+          python-version: '313'
+        - arch: armv7l
+          python-version: '314'
+        - arch: s390x
+          python-version: '310'
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v7
+      with:
+        persist-credentials: false
+    - name: Set up Python
+      uses: actions/setup-python@v7
+      with:
+        python-version: 3.x
+    - name: Set up Docker for i686
+      if: matrix.arch == 'i686'
+      uses: docker/setup-docker-action@v5
+      with:
+        version: v29.4.3
+    - name: Setup QEMU
+      uses: docker/setup-qemu-action@v4
+    - name: Install cibuildwheel
+      run: python -m pip install cibuildwheel==3.4.1
+    - name: Build wheels
+      run: cibuildwheel --output-dir wheelhouse
+      env:
+        CIBW_BUILD: cp${{ matrix.python-version }}-*
+        CIBW_ARCHS_LINUX: ${{ matrix.arch }}
+        CIBW_ENVIRONMENT_LINUX: STRINGZILLA_IN_QEMU=1 STRINGZILLA_SCALE=0.05${{ matrix.arch == 'aarch64' && ' QEMU_CPU=max,sve=off'
+          || '' }}
+    if: github.repository == 'grouville/StringZilla'
+  build_wasi:
+    name: Build Swift Artifact Bundle for WebAssembly WASI
+    if: github.repository == 'grouville/StringZilla'
+    runs-on: ubuntu-24.04
+    env:
+      WASI_SDK_VERSION: '34'
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v7
+      with:
+        persist-credentials: false
+    - name: Install WASI SDK
+      run: 'wget -q https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-${WASI_SDK_VERSION}/wasi-sdk-${WASI_SDK_VERSION}.0-x86_64-linux.tar.gz
+
+        tar xzf wasi-sdk-${WASI_SDK_VERSION}.0-x86_64-linux.tar.gz -C ~
+
+        mv ~/wasi-sdk-* ~/wasi-sdk
+
+        '
+    - name: Build Artifact Bundle
+      run: 'export WASI_SDK_PATH=~/wasi-sdk
+
+        # Strict SIMD128, which every SIMD engine validates, as one archive serves every Swift WASI module.
+
+        cmake --preset swift -D CMAKE_TOOLCHAIN_FILE=cmake/toolchain-wasm32-wasi.cmake -D STRINGZILLA_TARGET_ARCH=v128
+
+        cmake --build --preset swift
+
+        (cd build_swift && zip -qry ../StringZillaC.artifactbundle.zip StringZillaC.artifactbundle)
+
+        '
+    - name: Upload Artifact Bundle
+      uses: actions/upload-artifact@v7
+      with:
+        name: swift-artifactbundle
+        path: StringZillaC.artifactbundle.zip
+        if-no-files-found: error
+        retention-days: 1
+  swift_wasm:
+    name: Swift on WebAssembly WASI
+    runs-on: ubuntu-26.04
+    container: swift:6.4.1
+    env:
+      STRINGZILLA_SWIFT_ARTIFACT: StringZillaC.artifactbundle.zip
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v7
+      with:
+        persist-credentials: false
+    - name: Download Artifact Bundle
+      uses: actions/download-artifact@v8
+      with:
+        name: swift-artifactbundle
+    - name: Install Swift SDK for WebAssembly and Wasmtime
+      run: "apt-get update && apt-get install -y curl xz-utils\nswift_sdk_archive=\"$RUNNER_TEMP/swift-6.4.1-RELEASE_wasm.artifactbundle.tar.gz\"\
+        \ncurl -fsSL https://download.swift.org/swift-6.4.1-release/wasm-sdk/swift-6.4.1-RELEASE/swift-6.4.1-RELEASE_wasm.artifactbundle.tar.gz\
+        \ -o \"$swift_sdk_archive\"\necho \"783e6128d174d9f975b4eda68be02a5960681b723ef372e6876a7c2543a365d8  $swift_sdk_archive\"\
+        \ | sha256sum --check\nswift sdk install \"$swift_sdk_archive\"\ncurl -fsSL \"https://github.com/bytecodealliance/wasmtime/releases/download/${WASMTIME_VERSION}/wasmtime-${WASMTIME_VERSION}-x86_64-linux.tar.xz\"\
+        \ \\\n  | tar -xJ -C \"$RUNNER_TEMP\"\nmkdir -p \"$HOME/.wasmtime/bin\"\ncp \"$RUNNER_TEMP/wasmtime-${WASMTIME_VERSION}-x86_64-linux/wasmtime\"\
+        \ \"$HOME/.wasmtime/bin/\"\n"
+    - name: Build Library and Tests
+      run: swift build --build-tests --swift-sdk swift-6.4.1-RELEASE_wasm -Xswiftc -disable-implicit-string-processing-module-import
+    - name: Test under Wasmtime
+      run: ~/.wasmtime/bin/wasmtime run -S inherit-env=y --dir / .build/debug/StringZillaTests-test-runner.wasm
+        --testing-library swift-testing
+    if: github.repository == 'grouville/StringZilla'
+    needs: build_wasi
+
+  source_archive:
+    name: Install and test the Python source download
+    if: github.repository == 'grouville/StringZilla'
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - name: Build and install the source download
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build --sdist --outdir "$RUNNER_TEMP/stringzilla-sdist"
+          python -m pip install --group test --group test-oracles "$RUNNER_TEMP"/stringzilla-sdist/*.tar.gz
+      - name: Test installed package
+        run: python -X faulthandler -m pytest -x
