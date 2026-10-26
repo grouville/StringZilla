@@ -1,0 +1,106 @@
+name: "Review: PR 357 v128 boundary"
+
+on:
+  push:
+    branches: ["review/pr357-v128-boundary-20261025"]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify the two review claims
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out the exact PR head plus review probes
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install the repository's WASI SDK version
+        run: |
+          set -euo pipefail
+          curl -sSL \
+            "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-33/wasi-sdk-33.0-x86_64-linux.tar.gz" \
+            | tar xz -C "$RUNNER_TEMP"
+          printf 'WASI_SDK_PATH=%s\n' "$RUNNER_TEMP/wasi-sdk-33.0-x86_64-linux" >> "$GITHUB_ENV"
+
+      - name: Install pinned Wasmtime
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/wasmtime-v48.0.7-x86_64-linux.tar.xz"
+          curl -sSLo "$archive" \
+            "https://github.com/bytecodealliance/wasmtime/releases/download/v48.0.7/wasmtime-v48.0.7-x86_64-linux.tar.xz"
+          printf '%s  %s\n' \
+            '2192e2b5b911dc42321b9eac2b7f1f0b0d03356058c1e2b2c2b892625bdd0f45' \
+            "$archive" | sha256sum --check
+          tar xJf "$archive" -C "$RUNNER_TEMP"
+          printf 'WASMTIME=%s\n' \
+            "$RUNNER_TEMP/wasmtime-v48.0.7-x86_64-linux/wasmtime" >> "$GITHUB_ENV"
+
+      - name: Confirm the remaining SIMD128 boundary trap
+        run: |
+          set -euo pipefail
+          module="$RUNNER_TEMP/pr357-boundary.wasm"
+          "$WASI_SDK_PATH/bin/clang" \
+            --target=wasm32-unknown-unknown \
+            -O3 -msimd128 -Iinclude -nostdlib \
+            -Wl,--no-entry \
+            -Wl,--export=find_boundary \
+            -Wl,--initial-memory=131072 \
+            -Wl,--max-memory=131072 \
+            .github/review/pr357_wasm_boundary.c \
+            -o "$module"
+
+          exact_33="$("$WASMTIME" run --invoke find_boundary "$module" 33 1 33 2>/dev/null)"
+          exact_64="$("$WASMTIME" run --invoke find_boundary "$module" 33 1 64 2>/dev/null)"
+          [[ "$exact_33" == '1' && "$exact_64" == '1' ]]
+
+          set +e
+          "$WASMTIME" run --invoke find_boundary "$module" 33 1 65 \
+            >"$RUNNER_TEMP/trap-65.log" 2>&1
+          rc_65=$?
+          "$WASMTIME" run --invoke find_boundary "$module" 33 1 -1 \
+            >"$RUNNER_TEMP/trap-max.log" 2>&1
+          rc_max=$?
+          set -e
+
+          [[ "$rc_65" -ne 0 && "$rc_max" -ne 0 ]]
+          grep -F 'memory fault at wasm address 0x20000' "$RUNNER_TEMP/trap-65.log"
+          grep -F 'memory fault at wasm address 0x20000' "$RUNNER_TEMP/trap-max.log"
+          printf '33 and 64 return the match; 65 and UINT32_MAX trap at 0x20000.\n'
+
+      - name: Confirm the guard-page test does not cover WASI
+        run: |
+          set -euo pipefail
+
+          set +e
+          "$WASI_SDK_PATH/bin/clang++" \
+            --target=wasm32-wasip1 \
+            --sysroot="$WASI_SDK_PATH/share/wasi-sysroot" \
+            -msimd128 \
+            -D_WASI_EMULATED_SIGNAL \
+            -fwasm-exceptions \
+            -mllvm -wasm-use-legacy-eh=false \
+            -std=c++20 -Iinclude -Itest -E test/find.cpp -o /dev/null \
+            >"$RUNNER_TEMP/find-preprocess.log" 2>&1
+          preprocess_rc=$?
+          set -e
+
+          [[ "$preprocess_rc" -ne 0 ]]
+          grep -F '_WASI_EMULATED_MMAN' "$RUNNER_TEMP/find-preprocess.log"
+
+          "$WASI_SDK_PATH/bin/clang" \
+            --target=wasm32-wasip1 \
+            --sysroot="$WASI_SDK_PATH/share/wasi-sysroot" \
+            -D_WASI_EMULATED_MMAN \
+            .github/review/pr357_wasi_mman.c \
+            -lwasi-emulated-mman \
+            -o "$RUNNER_TEMP/mman-probe.wasm"
+          mman_output="$("$WASMTIME" run "$RUNNER_TEMP/mman-probe.wasm")"
+          printf '%s\n' "$mman_output"
+          grep -F 'mprotect result=-1' <<<"$mman_output"
+
+          grep -F 'SZ_TESTS_FILTER: utf8' .github/workflows/prerelease.yml
+          printf 'The native guard-page test cannot provide its intended protection under this WASI job.\n'
